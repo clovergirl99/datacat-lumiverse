@@ -42,9 +42,52 @@ function uuidv7() {
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
 }
 
+// src/import-metadata.js
+function record(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function creatorName(value) {
+  if (typeof value !== "string")
+    return "";
+  const name = value.trim();
+  return name && !/^(?:https?:|www\.|\/\/)/i.test(name) && !/^unknown(?: creator)?$/i.test(name) ? name : "";
+}
+function importCreatorName(character) {
+  return creatorName(character?.creator?.name) || creatorName(character?.creatorName);
+}
+function cleanCreatorNotes(notes) {
+  if (typeof notes !== "string")
+    return notes;
+  const stamp = /\[retrieved by https\\?:\/\/datacat\.run on \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC\]/gi;
+  return notes.replace(stamp, "");
+}
+function prepareImportCard(card, character, importedAt) {
+  if (!record(card))
+    throw new Error("DataCat returned an invalid character card.");
+  const result = { ...card };
+  const data = record(card.data) ? { ...card.data } : result;
+  if (data !== result)
+    result.data = data;
+  const originalCreator = typeof data.creator === "string" ? data.creator.trim() : "";
+  data.creator = importCreatorName(character) || creatorName(originalCreator);
+  if (typeof data.creator_notes === "string") {
+    data.creator_notes = cleanCreatorNotes(data.creator_notes);
+  }
+  const extensions = record(data.extensions) || {};
+  data.extensions = {
+    ...extensions,
+    datacat: {
+      ...record(extensions.datacat) || {},
+      .../^https?:\/\//i.test(originalCreator) ? { creatorSourceUrl: originalCreator } : {},
+      importedAt
+    }
+  };
+  return result;
+}
+
 // src/frontend.js
-var VERSION = "0.5.49";
-var DISPLAY_VERSION = "0.5.49";
+var VERSION = "0.5.50";
+var DISPLAY_VERSION = "0.5.50";
 var PAGE_SIZE = 24;
 var CHAT_LOADING_MIN_MS = 750;
 var MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -56,8 +99,8 @@ var CATALOG_SORT_OPTIONS = Object.freeze([
 ]);
 var PROD_ORIGIN = "https://datacat.run";
 var ACCOUNT_VIEWS = Object.freeze({
-  following: { title: "Following", path: "/creators/following" },
-  collections: { title: "Collections", path: "/content/collections" }
+  following: { title: "Following" },
+  collections: { title: "Collections" }
 });
 var API_PATH = "/api/client/v1";
 var VERIFICATION_ACTION = "character-import";
@@ -1221,20 +1264,11 @@ function setup(ctx) {
       display: none !important;
     }
     .dcv1-account-page-note {
-      padding: 8px 10px;
+      padding: 20px 14px;
       color: var(--dc-muted);
       font-size: 11px;
       line-height: 1.5;
     }
-    .dcv1-account-page-note a { color: var(--dc-text); }
-    .dcv1-account-page-frame {
-      flex: 1 1 auto;
-      width: 100%;
-      min-height: 0;
-      border: 0;
-      background: #17101f;
-    }
-    .dcv1-account-page-frame[hidden] { display: none !important; }
     .dcv1-scroll {
       flex: 1 1 auto;
       min-height: 0;
@@ -2909,12 +2943,6 @@ function setup(ctx) {
       </footer>
     </aside>
     <section class="dcv1-account-pages" data-account-pages hidden aria-label="DataCat account pages">
-      <div class="dcv1-account-page-note">
-        Sign in on the DataCat page below to see your followed creators and collections.
-        This website sign-in is separate from the catalog account connection.
-        If sign-in returns you to Fresh, select the tab again.
-        <a data-account-page-link target="_blank" rel="noopener noreferrer">Open in browser if the page or sign-in is blocked</a>.
-      </div>
       <div class="dcv1-account-page-note" data-account-page-status role="status"></div>
     </section>
     <div class="dcv1-scroll" data-catalog-scroll>
@@ -2962,9 +2990,7 @@ function setup(ctx) {
   const status = root.querySelector("[data-status]");
   const catalogScroll = root.querySelector("[data-catalog-scroll]");
   const accountPages = root.querySelector("[data-account-pages]");
-  const accountPageLink = root.querySelector("[data-account-page-link]");
   const accountPageStatus = root.querySelector("[data-account-page-status]");
-  const accountFrames = new Map;
   const catalogSentinel = root.querySelector("[data-catalog-sentinel]");
   const accountSummary = root.querySelector("[data-account-summary]");
   const accountFooter = root.querySelector(".dcv1-account-footer");
@@ -4270,39 +4296,15 @@ function setup(ctx) {
         </div>
       </section>`;
   }
-  function showAccountPage({ reload = false } = {}) {
+  function showAccountPage() {
     const view = ACCOUNT_VIEWS[state.viewMode];
     accountPages.hidden = !view;
     catalogScroll.hidden = Boolean(view);
-    accountFooter.hidden = Boolean(view);
+    accountFooter.hidden = false;
     tagsToggle.hidden = Boolean(view);
-    for (const [mode, frame] of accountFrames)
-      frame.hidden = mode !== state.viewMode;
     if (!view)
       return;
-    const url = `${PROD_ORIGIN}${view.path}`;
-    accountPageLink.href = url;
-    let frame = accountFrames.get(state.viewMode);
-    if (!frame) {
-      frame = document.createElement("iframe");
-      frame.className = "dcv1-account-page-frame";
-      frame.title = `DataCat ${view.title}`;
-      frame.referrerPolicy = "no-referrer";
-      frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals");
-      frame.addEventListener("load", () => {
-        frame.dataset.loading = "false";
-        if (!frame.hidden)
-          accountPageStatus.textContent = "";
-      });
-      accountFrames.set(state.viewMode, frame);
-      accountPages.append(frame);
-      reload = true;
-    }
-    if (reload) {
-      frame.dataset.loading = "true";
-      frame.src = url;
-    }
-    accountPageStatus.textContent = frame.dataset.loading === "true" ? `Opening DataCat ${view.title.toLowerCase()}…` : "";
+    accountPageStatus.textContent = `DataCat does not yet provide ${view.title.toLowerCase()} through its extension API. Your existing account connection is used by this extension; signing in again will not enable this feature.`;
   }
   function render() {
     const isAccountPage = Boolean(ACCOUNT_VIEWS[state.viewMode]);
@@ -5223,17 +5225,18 @@ function setup(ctx) {
     render();
     try {
       const transfer = await resolveImportTransferContract(summary || { id }, id);
-      const card = await withImportVerification(requestedName, verificationPopup, () => datacatFetch(transfer.cardPath));
-      const importedAt = new Date().toISOString();
-      if (card && typeof card === "object") {
-        card.extensions = {
-          ...card.extensions && typeof card.extensions === "object" ? card.extensions : {},
-          datacat: {
-            ...card.extensions?.datacat && typeof card.extensions.datacat === "object" ? card.extensions.datacat : {},
-            importedAt
-          }
-        };
+      const rawCard = await withImportVerification(requestedName, verificationPopup, () => datacatFetch(transfer.cardPath));
+      let importCharacter = transfer.character;
+      const creatorRef = characterCreatorRef(importCharacter);
+      if (!importCreatorName(importCharacter) && creatorRef) {
+        try {
+          const payload = await datacatFetch(`/creators/${encodeURIComponent(creatorRef)}/bootstrap`);
+          if (payload.creator)
+            importCharacter = { ...importCharacter, creator: payload.creator };
+        } catch (_) {}
       }
+      const importedAt = new Date().toISOString();
+      const card = prepareImportCard(rawCard, importCharacter, importedAt);
       const avatarFile = await withImportVerification(requestedName, verificationPopup, () => downloadMirroredAvatar(transfer.character, transfer.avatarPath));
       closeVerificationPopup(verificationPopup);
       const importResponse = await fetch("/api/v1/characters/import", {
@@ -5510,7 +5513,7 @@ function setup(ctx) {
       const nextMode = ["fresh", "catalog", "imports", "following", "collections"].includes(requestedMode) ? requestedMode : "fresh";
       if (nextMode === state.viewMode) {
         if (ACCOUNT_VIEWS[nextMode])
-          showAccountPage({ reload: true });
+          showAccountPage();
         return;
       }
       state.viewMode = nextMode;
@@ -5784,7 +5787,7 @@ function setup(ctx) {
     }
     if (target.closest("[data-refresh]")) {
       if (ACCOUNT_VIEWS[state.viewMode]) {
-        showAccountPage({ reload: true });
+        showAccountPage();
         return;
       }
       refreshCatalog({ forceLibrary: true });

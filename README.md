@@ -6,24 +6,20 @@ you want, import it, and start chatting without leaving your app.
 
 ## For Lumiverse users
 
-### This fork: Following and Collections
+### This fork: account views and import metadata
 
-This fork adds **Following** and **Collections** tabs to the Datacat drawer.
-They display DataCat's own account pages inside the extension. Sign in to
-DataCat in the page to view your followed creators and your collections.
-If signing in returns you to Fresh, tap the Following or Collections tab again.
-Tap the active tab or the refresh button to reopen that account page.
+Version 0.5.50 removes the embedded DataCat pages and extra sign-in prompts from
+Following and Collections. The existing linked account remains in use. These
+two tabs currently explain that DataCat's Client API does not expose those
+lists; they do not redirect you, open another site, or claim to show your data.
+Native following and collections need support from DataCat's API.
 
-The website sign-in is separate from the catalog's linked account. Switch or
-sign out within the website to change the account shown in these two tabs.
-Website credentials stay with DataCat; this fork does not read or copy them.
-Tabs retain their page while you browse other extension tabs.
-
-DataCat's scoped Client API currently has no following or collections endpoints,
-so these are embedded website views. Character import into Lumiverse still uses
-the existing Catalog and creator profile controls. If your browser or Android
-WebView blocks the embedded site, storage, or sign-in, use **Open in browser**.
-Android account sign-in has not been verified on a physical device.
+New imports use the creator's display name from DataCat metadata (for example,
+Binaria01), rather than a profile URL. The original creator URL stays in import
+metadata. DataCat's bracketed retrieval timestamp is removed from Creator Notes;
+the author's notes and character prompts are preserved. Both flat cards and
+Character Card V2/V3 envelopes are supported. These changes apply to new imports;
+they do not edit characters already stored in your Lumiverse library.
 
 ### What you can do
 
