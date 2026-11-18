@@ -1,9 +1,9 @@
 {
-  "version": "0.5.48",
+  "version": "0.5.49",
   "name": "Datacat Client",
   "identifier": "datacat_client_v1",
   "author": "Datacat",
-  "github": "https://github.com/datacat-run/datacat-lumiverse",
+  "github": "https://github.com/clovergirl99/datacat-lumiverse",
   "homepage": "https://datacat.run",
   "description": "Browse and import the full Datacat catalog in Lumiverse.",
   "permissions": [

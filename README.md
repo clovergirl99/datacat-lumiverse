@@ -6,6 +6,25 @@ you want, import it, and start chatting without leaving your app.
 
 ## For Lumiverse users
 
+### This fork: Following and Collections
+
+This fork adds **Following** and **Collections** tabs to the Datacat drawer.
+They display DataCat's own account pages inside the extension. Sign in to
+DataCat in the page to view your followed creators and your collections.
+If signing in returns you to Fresh, tap the Following or Collections tab again.
+Tap the active tab or the refresh button to reopen that account page.
+
+The website sign-in is separate from the catalog's linked account. Switch or
+sign out within the website to change the account shown in these two tabs.
+Website credentials stay with DataCat; this fork does not read or copy them.
+Tabs retain their page while you browse other extension tabs.
+
+DataCat's scoped Client API currently has no following or collections endpoints,
+so these are embedded website views. Character import into Lumiverse still uses
+the existing Catalog and creator profile controls. If your browser or Android
+WebView blocks the embedded site, storage, or sign-in, use **Open in browser**.
+Android account sign-in has not been verified on a physical device.
+
 ### What you can do
 
 - Discover new characters in Fresh, or search and filter the full catalogue.
@@ -18,7 +37,7 @@ you want, import it, and start chatting without leaving your app.
 
 1. Open Lumiverse's extension manager.
 2. Choose the option to install an extension from a Git repository.
-3. Paste `https://github.com/datacat-run/datacat-lumiverse` and install it.
+3. Paste `https://github.com/clovergirl99/datacat-lumiverse` and install it.
 4. Approve the `characters` and `cors_proxy` permissions when Lumiverse asks.
 5. Select the yellow cat button beside Settings to open Datacat.
 

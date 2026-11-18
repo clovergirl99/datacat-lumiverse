@@ -43,8 +43,8 @@ function uuidv7() {
 }
 
 // src/frontend.js
-var VERSION = "0.5.48";
-var DISPLAY_VERSION = "0.1";
+var VERSION = "0.5.49";
+var DISPLAY_VERSION = "0.5.49";
 var PAGE_SIZE = 24;
 var CHAT_LOADING_MIN_MS = 750;
 var MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -55,6 +55,10 @@ var CATALOG_SORT_OPTIONS = Object.freeze([
   { value: "messages_per_chat", label: "Msg/Chat" }
 ]);
 var PROD_ORIGIN = "https://datacat.run";
+var ACCOUNT_VIEWS = Object.freeze({
+  following: { title: "Following", path: "/creators/following" },
+  collections: { title: "Collections", path: "/content/collections" }
+});
 var API_PATH = "/api/client/v1";
 var VERIFICATION_ACTION = "character-import";
 var STORAGE_PREFIX = "datacat_client_v1";
@@ -753,6 +757,7 @@ function setup(ctx) {
     .dcv1-view-tabs {
       flex: 0 0 auto;
       display: flex;
+      overflow-x: auto;
       align-items: stretch;
       gap: 2px;
       padding: 4px 8px 0;
@@ -768,6 +773,7 @@ function setup(ctx) {
       font-size: 10px;
     }
     .dcv1-view-tab {
+      flex-shrink: 0;
       min-width: 76px;
       min-height: 29px;
       color: var(--dc-muted);
@@ -1205,6 +1211,30 @@ function setup(ctx) {
     .dcv1-status:empty {
       display: none;
     }
+    .dcv1-account-pages {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .dcv1-account-pages[hidden], .dcv1-scroll[hidden], .dcv1-account-footer[hidden] {
+      display: none !important;
+    }
+    .dcv1-account-page-note {
+      padding: 8px 10px;
+      color: var(--dc-muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .dcv1-account-page-note a { color: var(--dc-text); }
+    .dcv1-account-page-frame {
+      flex: 1 1 auto;
+      width: 100%;
+      min-height: 0;
+      border: 0;
+      background: #17101f;
+    }
+    .dcv1-account-page-frame[hidden] { display: none !important; }
     .dcv1-scroll {
       flex: 1 1 auto;
       min-height: 0;
@@ -2837,6 +2867,8 @@ function setup(ctx) {
       <button class="dcv1-view-tab" type="button" data-view-mode="fresh" data-active="true">Fresh</button>
       <button class="dcv1-view-tab" type="button" data-view-mode="catalog" data-active="false">Catalog</button>
       <button class="dcv1-view-tab" type="button" data-view-mode="imports" data-active="false">Imports</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="following" data-active="false">Following</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="collections" data-active="false">Collections</button>
       <button class="dcv1-button dcv1-tag-toggle" type="button" data-tags-toggle aria-expanded="false">Tags</button>
     </nav>
     <div class="dcv1-search-row" data-search-row>
@@ -2876,6 +2908,15 @@ function setup(ctx) {
         <span data-tag-status>Loading tags…</span>
       </footer>
     </aside>
+    <section class="dcv1-account-pages" data-account-pages hidden aria-label="DataCat account pages">
+      <div class="dcv1-account-page-note">
+        Sign in on the DataCat page below to see your followed creators and collections.
+        This website sign-in is separate from the catalog account connection.
+        If sign-in returns you to Fresh, select the tab again.
+        <a data-account-page-link target="_blank" rel="noopener noreferrer">Open in browser if the page or sign-in is blocked</a>.
+      </div>
+      <div class="dcv1-account-page-note" data-account-page-status role="status"></div>
+    </section>
     <div class="dcv1-scroll" data-catalog-scroll>
       <div class="dcv1-grid" data-grid></div>
       <button class="dcv1-infinite-sentinel" type="button" data-catalog-sentinel hidden></button>
@@ -2920,8 +2961,13 @@ function setup(ctx) {
   ];
   const status = root.querySelector("[data-status]");
   const catalogScroll = root.querySelector("[data-catalog-scroll]");
+  const accountPages = root.querySelector("[data-account-pages]");
+  const accountPageLink = root.querySelector("[data-account-page-link]");
+  const accountPageStatus = root.querySelector("[data-account-page-status]");
+  const accountFrames = new Map;
   const catalogSentinel = root.querySelector("[data-catalog-sentinel]");
   const accountSummary = root.querySelector("[data-account-summary]");
+  const accountFooter = root.querySelector(".dcv1-account-footer");
   const accountSummaryLabel = root.querySelector("[data-account-summary-label]");
   const accountSummarySpinner = root.querySelector("[data-account-summary-spinner]");
   const menuToggle = root.querySelector("[data-menu-toggle]");
@@ -2937,7 +2983,7 @@ function setup(ctx) {
     }
   }
   const persistedBrowserState = readPersistedBrowserState();
-  const persistedViewMode = ["fresh", "catalog"].includes(persistedBrowserState?.viewMode) ? persistedBrowserState.viewMode : "fresh";
+  const persistedViewMode = ["fresh", "catalog", "following", "collections"].includes(persistedBrowserState?.viewMode) ? persistedBrowserState.viewMode : "fresh";
   const persistedCreatorRef = String(persistedBrowserState?.selectedCreatorRef || "").trim();
   const state = {
     initializing: true,
@@ -3407,6 +3453,10 @@ function setup(ctx) {
     return state.characters.find((row) => normalizeId(row.id) === normalized) || state.freshWindows.last24h.find((row) => normalizeId(row.id) === normalized) || state.freshWindows.thisWeek.find((row) => normalizeId(row.id) === normalized) || state.creatorCharacters.find((row) => normalizeId(row.id) === normalized) || (normalizeId(state.selected?.id) === normalized ? state.selected : null);
   }
   function updateCatalogStatus() {
+    if (ACCOUNT_VIEWS[state.viewMode]) {
+      setStatus("");
+      return;
+    }
     if (state.viewMode === "fresh") {
       updateFreshStatus();
       return;
@@ -4220,7 +4270,45 @@ function setup(ctx) {
         </div>
       </section>`;
   }
+  function showAccountPage({ reload = false } = {}) {
+    const view = ACCOUNT_VIEWS[state.viewMode];
+    accountPages.hidden = !view;
+    catalogScroll.hidden = Boolean(view);
+    accountFooter.hidden = Boolean(view);
+    tagsToggle.hidden = Boolean(view);
+    for (const [mode, frame] of accountFrames)
+      frame.hidden = mode !== state.viewMode;
+    if (!view)
+      return;
+    const url = `${PROD_ORIGIN}${view.path}`;
+    accountPageLink.href = url;
+    let frame = accountFrames.get(state.viewMode);
+    if (!frame) {
+      frame = document.createElement("iframe");
+      frame.className = "dcv1-account-page-frame";
+      frame.title = `DataCat ${view.title}`;
+      frame.referrerPolicy = "no-referrer";
+      frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals");
+      frame.addEventListener("load", () => {
+        frame.dataset.loading = "false";
+        if (!frame.hidden)
+          accountPageStatus.textContent = "";
+      });
+      accountFrames.set(state.viewMode, frame);
+      accountPages.append(frame);
+      reload = true;
+    }
+    if (reload) {
+      frame.dataset.loading = "true";
+      frame.src = url;
+    }
+    accountPageStatus.textContent = frame.dataset.loading === "true" ? `Opening DataCat ${view.title.toLowerCase()}…` : "";
+  }
   function render() {
+    const isAccountPage = Boolean(ACCOUNT_VIEWS[state.viewMode]);
+    if (isAccountPage)
+      setStatus("");
+    showAccountPage();
     const isFresh = state.viewMode === "fresh";
     const isImports = state.viewMode === "imports";
     syncCatalogSortControl();
@@ -4231,7 +4319,9 @@ function setup(ctx) {
       button.setAttribute("aria-current", active ? "page" : "false");
     }
     searchRow.hidden = state.viewMode !== "catalog";
-    if (isFresh) {
+    if (isAccountPage) {
+      grid.replaceChildren();
+    } else if (isFresh) {
       const freshCount = freshCharacterCount();
       if ((state.initializing || state.freshLoading) && freshCount === 0) {
         grid.innerHTML = renderLoadingState("Loading fresh discoveries…");
@@ -4263,7 +4353,7 @@ function setup(ctx) {
     const loadingMore = isImports ? false : isFresh ? state.freshLoadingMore : state.loadingMore;
     const loadMoreError = isImports ? "" : isFresh ? state.freshLoadMoreError : state.loadMoreError;
     const error = isImports ? state.savedError : isFresh ? state.freshError : state.error;
-    catalogSentinel.hidden = !hasMore || Boolean(error);
+    catalogSentinel.hidden = isAccountPage || !hasMore || Boolean(error);
     catalogSentinel.disabled = loading || loadingMore || !loadMoreError;
     catalogSentinel.dataset.loading = String(loadingMore);
     catalogSentinel.textContent = loadingMore ? "Loading more characters…" : loadMoreError ? `${loadMoreError} Tap to retry.` : "Scroll for more";
@@ -5417,9 +5507,12 @@ function setup(ctx) {
     const viewModeButton = target.closest("[data-view-mode]");
     if (viewModeButton) {
       const requestedMode = String(viewModeButton.getAttribute("data-view-mode") || "");
-      const nextMode = ["fresh", "catalog", "imports"].includes(requestedMode) ? requestedMode : "fresh";
-      if (nextMode === state.viewMode)
+      const nextMode = ["fresh", "catalog", "imports", "following", "collections"].includes(requestedMode) ? requestedMode : "fresh";
+      if (nextMode === state.viewMode) {
+        if (ACCOUNT_VIEWS[nextMode])
+          showAccountPage({ reload: true });
         return;
+      }
       state.viewMode = nextMode;
       state.tagPanelOpen = false;
       setCatalogSortOpen(false);
@@ -5690,6 +5783,10 @@ function setup(ctx) {
       return;
     }
     if (target.closest("[data-refresh]")) {
+      if (ACCOUNT_VIEWS[state.viewMode]) {
+        showAccountPage({ reload: true });
+        return;
+      }
       refreshCatalog({ forceLibrary: true });
       return;
     }
