@@ -1,4 +1,5 @@
 import { uuidv7 } from "./uuidv7.js";
+import { createWebsiteAccount } from "./website-account.js";
 
 const PAGE_SIZE = 200;
 const CACHE_TTL_MS = 60_000;
@@ -7,7 +8,7 @@ const DATACAT_ID_PATTERN =
 const DEFAULT_DATACAT_ORIGIN = "https://datacat.run";
 const DATACAT_API_PREFIX = "/api/client/v1";
 const DATACAT_CLIENT_ID = "datacat_lumiverse";
-const DATACAT_CLIENT_VERSION = "0.5.50";
+const DATACAT_CLIENT_VERSION = "0.6.0";
 const INSTALLATION_KEY = "datacat.installation_id";
 const ACCESS_TOKEN_KEY = "datacat.access_token";
 const VERIFICATION_LEASE_KEY = "datacat.verification_lease";
@@ -19,6 +20,7 @@ if (!api) {
 
 const cacheByUser = new Map();
 const scanByUser = new Map();
+const websiteAccount = createWebsiteAccount(api);
 
 function randomInstallationId() {
   return `lumiverse-${uuidv7()}`;
@@ -380,6 +382,20 @@ for (const event of [
 }
 
 api.onFrontendMessage(async (payload, userId) => {
+  if (payload?.type === "datacat_website_request") {
+    const requestId = String(payload.requestId || "");
+    try {
+      const result = await websiteAccount(payload.request, userId);
+      api.sendToFrontend({ type: "datacat_website_result", requestId, result }, userId);
+    } catch (error) {
+      api.sendToFrontend({
+        type: "datacat_website_error", requestId,
+        code: error?.publicWebsiteError ? error.code : "WEBSITE_REQUEST_FAILED",
+        error: error?.publicWebsiteError ? error.message : "Could not load DataCat account data.",
+      }, userId);
+    }
+    return;
+  }
   if (payload?.type === "datacat_secure_state_request") {
     const requestId = String(payload.requestId || "");
     try {

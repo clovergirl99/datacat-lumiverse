@@ -85,9 +85,243 @@ function prepareImportCard(card, character, importedAt) {
   return result;
 }
 
+// src/account-views.js
+var escape = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+function mountAccountViews({ host, request, onCreator, onCharacter }) {
+  let view = "", source = "janitor", folder = null, rows = [], nextOffset = 0;
+  let hasMore = false, connected = null, busy = false, error = "", name = "", serial = 0, disposed = false;
+  let filter = "", saved = false;
+  function render() {
+    if (disposed)
+      return;
+    if (connected === false) {
+      host.innerHTML = `<div class="dcv1-account-page-note">
+        <h3>Use your existing DataCat session</h3>
+        <p>No new login is needed. Transfer the session from the desktop browser where you are already signed in to DataCat.</p>
+        <ol><li>On datacat.run, open Developer Tools (F12) → Console.</li>
+        <li>Run this command to copy your own current session:<br><code>copy(localStorage.getItem("liberator_session_token") || "")</code></li>
+        <li>Paste it below. Only paste this credential into your own Lumiverse extension; never send it in chat.</li></ol>
+        <label>Existing DataCat website session<input class="dcv1-search" data-website-session type="password" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Existing DataCat website session"></label>
+        <button class="dcv1-button" type="button" data-website-connect>Save session and load</button>
+        ${saved ? '<button class="dcv1-button" type="button" data-website-cancel>Use saved session</button>' : ""}
+        <p>Saved encrypted for this Lumiverse user on this server. If Android runs a separate Lumiverse server, transfer the session there once too. If DataCat expires or revokes it, this connection will need updating.</p>
+        <p role="status" data-account-message>${escape(error)}</p>
+      </div>`;
+      return;
+    }
+    const heading = folder?.name || (view === "following" ? "Following" : "Collections");
+    host.innerHTML = `<div class="dcv1-account-tools">
+      <strong>${escape(heading)}</strong>
+      <span>${escape(name ? `Website session · ${name}` : "Website session saved")}</span>
+      <button class="dcv1-button" type="button" data-website-change>Update session</button>
+      <button class="dcv1-button" type="button" data-website-disconnect>Remove saved session</button>
+      ${folder ? '<button class="dcv1-button" type="button" data-account-back>All collections</button>' : ""}
+      ${view === "following" ? `<label>Source <select data-account-source aria-label="Creator source"><option value="janitor" ${source === "janitor" ? "selected" : ""}>Janitor</option><option value="saucepan" ${source === "saucepan" ? "selected" : ""}>Saucepan</option></select></label>` : ""}
+      <input class="dcv1-search" data-account-search type="search" aria-label="Filter loaded items" placeholder="Filter loaded items" value="${escape(filter)}">
+    </div>
+    <div class="dcv1-account-results" data-account-results></div>
+    <p class="dcv1-account-message" role="status">${escape(error || (busy ? "Loading…" : ""))}</p>
+    ${error ? '<button class="dcv1-button" data-account-retry type="button">Try again</button>' : ""}
+    ${hasMore ? `<button class="dcv1-button" data-account-more type="button" ${busy ? "disabled" : ""}>Load more</button>` : ""}`;
+    renderRows();
+  }
+  function renderRows() {
+    const list = host.querySelector("[data-account-results]");
+    if (!list)
+      return;
+    list.innerHTML = rows.map((row, index) => ({ row, index })).filter(({ row }) => `${row.name} ${row.creatorName || ""}`.toLowerCase().includes(filter.toLowerCase())).map(({ row, index }) => `<button class="dcv1-account-row" type="button" data-account-row="${index}" ${view === "following" && !row.ref ? "disabled" : ""}>
+      <strong>${escape(row.name)}</strong><span>${escape(view === "following" ? `${row.characterCount} characters` : folder ? row.creatorName : `${row.count} items · ${row.visibility}`)}</span>
+      ${!folder && view === "collections" && row.description ? `<span>${escape(row.description)}</span>` : ""}
+    </button>`).join("") || (busy ? "" : `<p>${rows.length ? "No loaded items match this filter." : view === "following" ? "No followed creators for this source." : folder ? "This collection is empty." : "No collections found."}</p>`);
+  }
+  async function load(reset = true) {
+    const ticket = ++serial;
+    busy = true;
+    error = "";
+    if (reset) {
+      rows = [];
+      nextOffset = 0;
+      hasMore = false;
+    }
+    render();
+    try {
+      if (connected === null) {
+        const status = await request({ action: "status" });
+        if (ticket !== serial || disposed)
+          return;
+        connected = status.connected;
+        saved = connected;
+      }
+      if (!connected)
+        return;
+      const action = view === "following" ? "following" : folder ? "collection-items" : "collections";
+      const payload = await request({ action, source, offset: nextOffset, folderId: folder?.id });
+      if (ticket !== serial || disposed)
+        return;
+      const combined = reset ? payload.rows : [...rows, ...payload.rows];
+      const seen = new Set;
+      rows = combined.filter((row) => {
+        const key = row.ref || row.id;
+        if (!key)
+          return true;
+        if (seen.has(key))
+          return false;
+        seen.add(key);
+        return true;
+      });
+      hasMore = Boolean(payload.hasMore);
+      nextOffset = payload.nextOffset || rows.length;
+    } catch (e) {
+      if (ticket !== serial || disposed)
+        return;
+      error = e.message || "Could not load DataCat account data.";
+      if (e.code === "WEBSITE_SESSION_REQUIRED")
+        connected = false;
+    } finally {
+      if (ticket === serial && !disposed) {
+        busy = false;
+        render();
+      }
+    }
+  }
+  const click = async (event) => {
+    const target = event.target.closest("button");
+    if (!target || !host.contains(target))
+      return;
+    event.stopPropagation();
+    if (target.hasAttribute("data-website-connect")) {
+      if (busy)
+        return;
+      const field = host.querySelector("[data-website-session]");
+      const token = field.value;
+      field.value = "";
+      busy = true;
+      target.disabled = true;
+      const ticket = ++serial;
+      try {
+        const result = await request({ action: "connect", token });
+        if (ticket !== serial || disposed)
+          return;
+        connected = true;
+        saved = true;
+        name = result.name || "";
+        busy = false;
+        await load();
+      } catch (e) {
+        if (ticket !== serial || disposed)
+          return;
+        busy = false;
+        error = e.message;
+        render();
+      }
+      return;
+    }
+    if (target.hasAttribute("data-website-change")) {
+      ++serial;
+      connected = false;
+      busy = false;
+      error = "";
+      render();
+      return;
+    }
+    if (target.hasAttribute("data-website-cancel") && !busy) {
+      connected = true;
+      error = "";
+      await load();
+      return;
+    }
+    if (target.hasAttribute("data-website-disconnect")) {
+      if (busy)
+        return;
+      const ticket = ++serial;
+      busy = true;
+      try {
+        await request({ action: "disconnect" });
+        if (ticket !== serial || disposed)
+          return;
+        connected = false;
+        saved = false;
+        name = "";
+        rows = [];
+        folder = null;
+        error = "";
+      } catch (e) {
+        if (ticket === serial)
+          error = e.message;
+      } finally {
+        if (ticket === serial && !disposed) {
+          busy = false;
+          render();
+        }
+      }
+      return;
+    }
+    if (busy)
+      return;
+    if (target.hasAttribute("data-account-back")) {
+      folder = null;
+      filter = "";
+      await load();
+    } else if (target.hasAttribute("data-account-more"))
+      await load(false);
+    else if (target.hasAttribute("data-account-retry"))
+      await load(rows.length === 0);
+    else if (target.hasAttribute("data-account-row")) {
+      const row = rows[Number(target.dataset.accountRow)];
+      if (!row)
+        return;
+      if (view === "following")
+        onCreator(row.ref);
+      else if (folder)
+        onCharacter(row);
+      else {
+        folder = row;
+        filter = "";
+        await load();
+      }
+    }
+  };
+  const change = (event) => {
+    if (event.target.matches("[data-account-source]")) {
+      source = event.target.value;
+      filter = "";
+      load();
+    }
+  };
+  const input = (event) => {
+    if (event.target.matches("[data-account-search]")) {
+      filter = event.target.value;
+      renderRows();
+    }
+  };
+  host.addEventListener("click", click);
+  host.addEventListener("change", change);
+  host.addEventListener("input", input);
+  return {
+    show(nextView, refresh = false) {
+      if (nextView !== view) {
+        view = nextView;
+        folder = null;
+        filter = "";
+        if (!(busy && connected === false))
+          load();
+      } else if (refresh && !busy)
+        load();
+    },
+    destroy() {
+      disposed = true;
+      ++serial;
+      host.replaceChildren();
+      host.removeEventListener("click", click);
+      host.removeEventListener("change", change);
+      host.removeEventListener("input", input);
+    }
+  };
+}
+
 // src/frontend.js
-var VERSION = "0.5.50";
-var DISPLAY_VERSION = "0.5.50";
+var VERSION = "0.6.0";
+var DISPLAY_VERSION = "0.6.0";
 var PAGE_SIZE = 24;
 var CHAT_LOADING_MIN_MS = 750;
 var MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -1259,6 +1493,8 @@ function setup(ctx) {
       min-height: 0;
       display: flex;
       flex-direction: column;
+      overflow: auto;
+      padding-bottom: 12px;
     }
     .dcv1-account-pages[hidden], .dcv1-scroll[hidden], .dcv1-account-footer[hidden] {
       display: none !important;
@@ -1268,7 +1504,17 @@ function setup(ctx) {
       color: var(--dc-muted);
       font-size: 11px;
       line-height: 1.5;
+      overflow-wrap: anywhere;
     }
+    .dcv1-account-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px; }
+    .dcv1-account-tools strong, .dcv1-account-tools > span { flex-basis: 100%; }
+    .dcv1-account-tools > span, .dcv1-account-message { color: var(--dc-muted); font-size: 11px; }
+    .dcv1-account-results { padding: 0 12px; }
+    .dcv1-account-row { width: 100%; display: flex; flex-direction: column; gap: 5px; text-align: left; padding: 12px 0; color: var(--dc-text); background: transparent; border: 0; border-bottom: 1px solid var(--dc-border); cursor: pointer; font: inherit; }
+    .dcv1-account-row span { color: var(--dc-muted); font-size: 12px; }
+    .dcv1-account-row:focus-visible { outline: 2px solid var(--dc-yellow); }
+    .dcv1-account-row:disabled { opacity: .6; cursor: default; }
+    .dcv1-account-page-note input { margin: 8px 0; }
     .dcv1-scroll {
       flex: 1 1 auto;
       min-height: 0;
@@ -2943,7 +3189,6 @@ function setup(ctx) {
       </footer>
     </aside>
     <section class="dcv1-account-pages" data-account-pages hidden aria-label="DataCat account pages">
-      <div class="dcv1-account-page-note" data-account-page-status role="status"></div>
     </section>
     <div class="dcv1-scroll" data-catalog-scroll>
       <div class="dcv1-grid" data-grid></div>
@@ -2990,7 +3235,6 @@ function setup(ctx) {
   const status = root.querySelector("[data-status]");
   const catalogScroll = root.querySelector("[data-catalog-scroll]");
   const accountPages = root.querySelector("[data-account-pages]");
-  const accountPageStatus = root.querySelector("[data-account-page-status]");
   const catalogSentinel = root.querySelector("[data-catalog-sentinel]");
   const accountSummary = root.querySelector("[data-account-summary]");
   const accountFooter = root.querySelector(".dcv1-account-footer");
@@ -3015,6 +3259,7 @@ function setup(ctx) {
     initializing: true,
     viewMode: persistedViewMode,
     characters: [],
+    accountCharacters: [],
     query: String(persistedBrowserState?.query || "").slice(0, 120),
     catalogSort: normalizeCatalogSort(persistedBrowserState?.catalogSort),
     catalogSortLoading: false,
@@ -3191,6 +3436,8 @@ function setup(ctx) {
       });
     } else if (operation === "state") {
       ctx.sendToBackend({ type: "datacat_secure_state_request", requestId });
+    } else if (operation === "website") {
+      ctx.sendToBackend({ type: "datacat_website_request", requestId, request });
     } else if (operation === "clear-verification") {
       ctx.sendToBackend({
         type: "datacat_clear_verification_request",
@@ -3210,6 +3457,8 @@ function setup(ctx) {
       "datacat_character_link_error",
       "datacat_api_result",
       "datacat_api_error",
+      "datacat_website_result",
+      "datacat_website_error",
       "datacat_secure_state_result",
       "datacat_secure_state_error",
       "datacat_clear_verification_result",
@@ -3226,18 +3475,34 @@ function setup(ctx) {
       "datacat_link_index_error",
       "datacat_character_link_error",
       "datacat_api_error",
+      "datacat_website_error",
       "datacat_secure_state_error",
       "datacat_clear_verification_error"
     ].includes(payload.type)) {
-      pending.reject(new Error(String(payload.error || "Could not inspect the Lumiverse character library.")));
+      pending.reject(Object.assign(new Error(String(payload.error || "Could not inspect the Lumiverse character library.")), { code: payload.code }));
       return;
     }
-    if (payload.type === "datacat_api_result") {
+    if (payload.type === "datacat_website_result") {
+      pending.resolve(payload.result || {});
+    } else if (payload.type === "datacat_api_result") {
       pending.resolve(payload.response || {});
     } else if (payload.type === "datacat_secure_state_result") {
       pending.resolve(payload.state || {});
     } else {
       pending.resolve(payload);
+    }
+  });
+  const accountViews = mountAccountViews({
+    host: accountPages,
+    request: (request) => datacatBackendRequest("website", request),
+    onCreator: (ref) => {
+      openCreator(ref);
+    },
+    onCharacter: (row) => {
+      const source = /^[a-z0-9_]+$/i.test(row.sourceKind || "") ? `?sourceKind=${encodeURIComponent(row.sourceKind)}` : "";
+      const character = { ...row, clientPaths: { profile: `/characters/${row.id}${source}` } };
+      state.accountCharacters = [...state.accountCharacters.filter((item) => item.id !== row.id), character];
+      openProfile(row.id);
     }
   });
   async function ensureSecureTransportPermission() {
@@ -3476,7 +3741,7 @@ function setup(ctx) {
   }
   function findCharacterById(id) {
     const normalized = normalizeId(id);
-    return state.characters.find((row) => normalizeId(row.id) === normalized) || state.freshWindows.last24h.find((row) => normalizeId(row.id) === normalized) || state.freshWindows.thisWeek.find((row) => normalizeId(row.id) === normalized) || state.creatorCharacters.find((row) => normalizeId(row.id) === normalized) || (normalizeId(state.selected?.id) === normalized ? state.selected : null);
+    return state.accountCharacters.find((row) => normalizeId(row.id) === normalized) || state.characters.find((row) => normalizeId(row.id) === normalized) || state.freshWindows.last24h.find((row) => normalizeId(row.id) === normalized) || state.freshWindows.thisWeek.find((row) => normalizeId(row.id) === normalized) || state.creatorCharacters.find((row) => normalizeId(row.id) === normalized) || (normalizeId(state.selected?.id) === normalized ? state.selected : null);
   }
   function updateCatalogStatus() {
     if (ACCOUNT_VIEWS[state.viewMode]) {
@@ -4296,7 +4561,7 @@ function setup(ctx) {
         </div>
       </section>`;
   }
-  function showAccountPage() {
+  function showAccountPage(refresh = false) {
     const view = ACCOUNT_VIEWS[state.viewMode];
     accountPages.hidden = !view;
     catalogScroll.hidden = Boolean(view);
@@ -4304,7 +4569,7 @@ function setup(ctx) {
     tagsToggle.hidden = Boolean(view);
     if (!view)
       return;
-    accountPageStatus.textContent = `DataCat does not yet provide ${view.title.toLowerCase()} through its extension API. Your existing account connection is used by this extension; signing in again will not enable this feature.`;
+    accountViews.show(state.viewMode, refresh);
   }
   function render() {
     const isAccountPage = Boolean(ACCOUNT_VIEWS[state.viewMode]);
@@ -5513,7 +5778,7 @@ function setup(ctx) {
       const nextMode = ["fresh", "catalog", "imports", "following", "collections"].includes(requestedMode) ? requestedMode : "fresh";
       if (nextMode === state.viewMode) {
         if (ACCOUNT_VIEWS[nextMode])
-          showAccountPage();
+          showAccountPage(true);
         return;
       }
       state.viewMode = nextMode;
@@ -5787,7 +6052,7 @@ function setup(ctx) {
     }
     if (target.closest("[data-refresh]")) {
       if (ACCOUNT_VIEWS[state.viewMode]) {
-        showAccountPage();
+        showAccountPage(true);
         return;
       }
       refreshCatalog({ forceLibrary: true });
@@ -6084,6 +6349,7 @@ function setup(ctx) {
     restorePersistedScroll();
   })();
   return () => {
+    accountViews.destroy();
     window.clearTimeout(searchTimer);
     window.clearTimeout(tagSearchTimer);
     window.clearTimeout(linkPollTimer);

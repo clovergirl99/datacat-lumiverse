@@ -6,13 +6,45 @@ you want, import it, and start chatting without leaving your app.
 
 ## For Lumiverse users
 
-### This fork: account views and import metadata
+### This fork: native Following and Collections
 
-Version 0.5.50 removes the embedded DataCat pages and extra sign-in prompts from
-Following and Collections. The existing linked account remains in use. These
-two tabs currently explain that DataCat's Client API does not expose those
-lists; they do not redirect you, open another site, or claim to show your data.
-Native following and collections need support from DataCat's API.
+Version 0.6.0 adds native **Following** and **Collections** views. Following
+supports Janitor and Saucepan creators, paging, filtering the loaded list, and
+opening creator profiles inside the extension. Collections includes private
+collections and their contents, with paging and character profile browsing.
+Imports still use the scoped Client API and its existing verification flow;
+characters unavailable to that API may be viewable in a collection but cannot
+necessarily be imported through the catalog.
+
+DataCat's Client API does not expose these personal lists. Instead, this fork
+uses the same authenticated JSON routes as DataCat's website. This needs a
+one-time transfer of your **existing website session**, not another login:
+
+1. In the desktop browser where you are already signed in to `datacat.run`,
+   open Developer Tools (F12), then Console.
+2. Run `copy(localStorage.getItem("liberator_session_token") || "")`.
+3. In Lumiverse, open Following or Collections and paste the value into
+   **Existing DataCat website session**, then choose **Save session and load**.
+
+The value is an account credential: paste it only into your own Lumiverse
+extension, never into chat or a GitHub issue. It is verified with DataCat and
+saved in Lumiverse's encrypted, per-user enclave. It is not stored in browser
+local/session storage, included in frontend responses, or sent to other hosts.
+The extension's existing Client API account remains separate.
+
+After setup, these tabs load inside Lumiverse without frames or external
+navigation. Android and desktop share the saved session if they use the same
+Lumiverse server/user. If they run separate servers, paste the session once
+into each. DataCat can expire or revoke website sessions; **Update session**
+replaces one, and **Remove saved session** removes only this extension's saved
+copy without logging out the website or disconnecting the catalog. Website
+routes may change independently of the official Client API.
+
+The request handling is tested with mocked DataCat responses and the native
+views are browser-tested with sample data. Real private account results and a
+physical Android app must be verified after the user transfers a live session.
+
+### Import metadata
 
 New imports use the creator's display name from DataCat metadata (for example,
 Binaria01), rather than a profile URL. The original creator URL stays in import

@@ -43,6 +43,120 @@ function uuidv7() {
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
 }
 
+// src/website-account.js
+var ORIGIN = "https://datacat.run";
+var KEY = "datacat.website_session";
+var UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+function fail(code, message) {
+  return Object.assign(new Error(message), { code, publicWebsiteError: true });
+}
+function offset(value) {
+  const n = Number(value ?? 0);
+  if (!Number.isSafeInteger(n) || n < 0 || n > 1e6)
+    throw fail("INVALID_REQUEST", "Invalid page.");
+  return n;
+}
+function text(value, max = 500) {
+  return typeof value === "string" ? value.slice(0, max) : "";
+}
+function createWebsiteAccount(api) {
+  async function read(path, userId, candidate, method = "GET") {
+    const token = candidate || await api.enclave.get(KEY, userId);
+    if (!token)
+      throw fail("WEBSITE_SESSION_REQUIRED", "Transfer your existing DataCat website session once to load these lists.");
+    let response;
+    try {
+      response = await api.cors(`${ORIGIN}${path}`, {
+        method,
+        headers: { Accept: "application/json", "Content-Type": "application/json", "X-Session-Token": token },
+        ...method === "POST" ? { body: JSON.stringify({ token }) } : {}
+      });
+    } catch (_) {
+      throw fail("WEBSITE_NETWORK_ERROR", "Could not reach DataCat. Your saved connection has been kept. Try again.");
+    }
+    let body;
+    try {
+      body = JSON.parse(response.body);
+    } catch (_) {
+      throw fail("WEBSITE_RESPONSE_ERROR", "DataCat returned an unreadable response. Try again later.");
+    }
+    if ([401, 403].includes(Number(response.status)) || path === "/api/auth/verify" && (!body.valid || !body.user)) {
+      throw fail("WEBSITE_SESSION_REJECTED", "DataCat did not accept this website session. Check that it is still active and belongs to a signed-in account.");
+    }
+    if (Number(response.status) < 200 || Number(response.status) >= 300 || body.success !== true) {
+      throw fail("WEBSITE_REQUEST_FAILED", Number(response.status) === 429 ? "DataCat is rate limiting requests. Try again shortly." : "DataCat could not load this account data. Try again later.");
+    }
+    return body;
+  }
+  return async function websiteAccount(input, userId) {
+    const action = String(input?.action || "");
+    if (action === "status")
+      return { connected: await api.enclave.has(KEY, userId) };
+    if (action === "disconnect") {
+      await api.enclave.delete(KEY, userId);
+      return { connected: false };
+    }
+    if (action === "connect") {
+      const token = String(input.token || "").trim();
+      if (token.length < 16 || token.length > 16000 || /[^\x21-\x7e]/.test(token) || /^dcv1_/i.test(token)) {
+        throw fail("INVALID_WEBSITE_SESSION", "Paste the website session value, not a Client API token or a password.");
+      }
+      const body = await read("/api/auth/verify", userId, token, "POST");
+      await api.enclave.put(KEY, token, userId);
+      return { connected: true, name: text(body.user.displayName || body.user.username || "DataCat account", 120) };
+    }
+    if (action === "following") {
+      const source = input.source === "saucepan" ? "saucepan" : input.source === "janitor" ? "janitor" : null;
+      if (!source)
+        throw fail("INVALID_REQUEST", "Unknown creator source.");
+      const start = offset(input.offset);
+      const body = await read(`/api/creators/following?limit=24&offset=${start}&sourceKind=${source}&sortBy=total_chats&sortDir=desc&tagsLimit=0`, userId);
+      if (!Array.isArray(body.list))
+        throw fail("WEBSITE_RESPONSE_ERROR", "DataCat did not return a creator list.");
+      const rows = body.list.map((row) => {
+        const id = text(row.creatorId || row.id || row.ref, 100);
+        const bare = id.replace(/^saucepan:/, "");
+        return {
+          ref: UUID.test(bare) ? source === "saucepan" ? `saucepan:${bare}` : bare : "",
+          name: text(row.userName || row.name || row.creatorName || "Unknown creator", 240),
+          characterCount: Number(row.charCount) || 0
+        };
+      });
+      const total = Number.isFinite(Number(body.total)) ? Number(body.total) : null;
+      return { rows, hasMore: body.list.length === 24 && (total === null || start + body.list.length < total), nextOffset: start + body.list.length, total };
+    }
+    if (action === "collections") {
+      const body = await read("/api/user-folders", userId);
+      if (!Array.isArray(body.folders))
+        throw fail("WEBSITE_RESPONSE_ERROR", "DataCat did not return a collection list.");
+      return { rows: body.folders.filter((row) => Number.isSafeInteger(Number(row.id)) && Number(row.id) > 0).map((row) => ({
+        id: Number(row.id),
+        name: text(row.title || "Untitled collection", 240),
+        description: text(row.description, 1500),
+        count: Number(row.itemCount ?? row.membershipCount) || 0,
+        visibility: row.visibility === "published" ? "Published" : "Private"
+      })) };
+    }
+    if (action === "collection-items") {
+      const folder = Number(input.folderId);
+      if (!Number.isSafeInteger(folder) || folder <= 0)
+        throw fail("INVALID_REQUEST", "Invalid collection.");
+      const start = offset(input.offset);
+      const body = await read(`/api/characters?limit=24&offset=${start}&skipCount=1&collectionSection=collected&folderId=${folder}`, userId);
+      if (!Array.isArray(body.characters))
+        throw fail("WEBSITE_RESPONSE_ERROR", "DataCat did not return collection contents.");
+      const rows = body.characters.map((row) => ({
+        id: text(row.characterId || row.character_id || row.id, 100),
+        name: text(row.name || row.chat_name || row.chatName || "Unnamed character", 240),
+        creatorName: text(row.creatorName || row.creator_name || (typeof row.creator === "string" ? row.creator : row.creator?.name), 240),
+        sourceKind: text(row.characterSourceKind || row.primaryContentSourceKind || row.sourceKind, 50)
+      })).filter((row) => UUID.test(row.id));
+      return { rows, nextOffset: start + body.characters.length, hasMore: body.hasMore ?? body.paging?.hasMore ?? body.characters.length === 24 };
+    }
+    throw fail("INVALID_REQUEST", "Unknown account operation.");
+  };
+}
+
 // src/backend.js
 var PAGE_SIZE = 200;
 var CACHE_TTL_MS = 60000;
@@ -50,7 +164,7 @@ var DATACAT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 var DEFAULT_DATACAT_ORIGIN = "https://datacat.run";
 var DATACAT_API_PREFIX = "/api/client/v1";
 var DATACAT_CLIENT_ID = "datacat_lumiverse";
-var DATACAT_CLIENT_VERSION = "0.5.50";
+var DATACAT_CLIENT_VERSION = "0.6.0";
 var INSTALLATION_KEY = "datacat.installation_id";
 var ACCESS_TOKEN_KEY = "datacat.access_token";
 var VERIFICATION_LEASE_KEY = "datacat.verification_lease";
@@ -60,6 +174,7 @@ if (!api) {
 }
 var cacheByUser = new Map;
 var scanByUser = new Map;
+var websiteAccount = createWebsiteAccount(api);
 function randomInstallationId() {
   return `lumiverse-${uuidv7()}`;
 }
@@ -351,6 +466,21 @@ for (const event of [
   });
 }
 api.onFrontendMessage(async (payload, userId) => {
+  if (payload?.type === "datacat_website_request") {
+    const requestId = String(payload.requestId || "");
+    try {
+      const result = await websiteAccount(payload.request, userId);
+      api.sendToFrontend({ type: "datacat_website_result", requestId, result }, userId);
+    } catch (error) {
+      api.sendToFrontend({
+        type: "datacat_website_error",
+        requestId,
+        code: error?.publicWebsiteError ? error.code : "WEBSITE_REQUEST_FAILED",
+        error: error?.publicWebsiteError ? error.message : "Could not load DataCat account data."
+      }, userId);
+    }
+    return;
+  }
   if (payload?.type === "datacat_secure_state_request") {
     const requestId = String(payload.requestId || "");
     try {

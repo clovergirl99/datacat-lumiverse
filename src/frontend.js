@@ -1,8 +1,9 @@
 import { uuidv7 } from "./uuidv7.js";
 import { importCreatorName, prepareImportCard } from "./import-metadata.js";
+import { mountAccountViews } from "./account-views.js";
 
-const VERSION = "0.5.50";
-const DISPLAY_VERSION = "0.5.50";
+const VERSION = "0.6.0";
+const DISPLAY_VERSION = "0.6.0";
 const PAGE_SIZE = 24;
 const CHAT_LOADING_MIN_MS = 750;
 const MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -13,8 +14,7 @@ const CATALOG_SORT_OPTIONS = Object.freeze([
   { value: "messages_per_chat", label: "Msg/Chat" },
 ]);
 const PROD_ORIGIN = "https://datacat.run";
-// DataCat's Client API does not yet expose these account lists. Do not load
-// website frames: they cannot use the installation's linked-account token.
+// Account lists use an explicitly transferred website session via the backend.
 const ACCOUNT_VIEWS = Object.freeze({
   following: { title: "Following" },
   collections: { title: "Collections" },
@@ -1278,6 +1278,8 @@ export function setup(ctx) {
       min-height: 0;
       display: flex;
       flex-direction: column;
+      overflow: auto;
+      padding-bottom: 12px;
     }
     .dcv1-account-pages[hidden], .dcv1-scroll[hidden], .dcv1-account-footer[hidden] {
       display: none !important;
@@ -1287,7 +1289,17 @@ export function setup(ctx) {
       color: var(--dc-muted);
       font-size: 11px;
       line-height: 1.5;
+      overflow-wrap: anywhere;
     }
+    .dcv1-account-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px; }
+    .dcv1-account-tools strong, .dcv1-account-tools > span { flex-basis: 100%; }
+    .dcv1-account-tools > span, .dcv1-account-message { color: var(--dc-muted); font-size: 11px; }
+    .dcv1-account-results { padding: 0 12px; }
+    .dcv1-account-row { width: 100%; display: flex; flex-direction: column; gap: 5px; text-align: left; padding: 12px 0; color: var(--dc-text); background: transparent; border: 0; border-bottom: 1px solid var(--dc-border); cursor: pointer; font: inherit; }
+    .dcv1-account-row span { color: var(--dc-muted); font-size: 12px; }
+    .dcv1-account-row:focus-visible { outline: 2px solid var(--dc-yellow); }
+    .dcv1-account-row:disabled { opacity: .6; cursor: default; }
+    .dcv1-account-page-note input { margin: 8px 0; }
     .dcv1-scroll {
       flex: 1 1 auto;
       min-height: 0;
@@ -2963,7 +2975,6 @@ export function setup(ctx) {
       </footer>
     </aside>
     <section class="dcv1-account-pages" data-account-pages hidden aria-label="DataCat account pages">
-      <div class="dcv1-account-page-note" data-account-page-status role="status"></div>
     </section>
     <div class="dcv1-scroll" data-catalog-scroll>
       <div class="dcv1-grid" data-grid></div>
@@ -3011,7 +3022,6 @@ export function setup(ctx) {
   const status = root.querySelector("[data-status]");
   const catalogScroll = root.querySelector("[data-catalog-scroll]");
   const accountPages = root.querySelector("[data-account-pages]");
-  const accountPageStatus = root.querySelector("[data-account-page-status]");
   const catalogSentinel = root.querySelector("[data-catalog-sentinel]");
   const accountSummary = root.querySelector("[data-account-summary]");
   const accountFooter = root.querySelector(".dcv1-account-footer");
@@ -3049,6 +3059,7 @@ export function setup(ctx) {
     initializing: true,
     viewMode: persistedViewMode,
     characters: [],
+    accountCharacters: [],
     query: String(persistedBrowserState?.query || "").slice(0, 120),
     catalogSort: normalizeCatalogSort(persistedBrowserState?.catalogSort),
     catalogSortLoading: false,
@@ -3286,6 +3297,8 @@ export function setup(ctx) {
         });
       } else if (operation === "state") {
         ctx.sendToBackend({ type: "datacat_secure_state_request", requestId });
+      } else if (operation === "website") {
+        ctx.sendToBackend({ type: "datacat_website_request", requestId, request });
       } else if (operation === "clear-verification") {
         ctx.sendToBackend({
           type: "datacat_clear_verification_request",
@@ -3307,6 +3320,8 @@ export function setup(ctx) {
         "datacat_character_link_error",
         "datacat_api_result",
         "datacat_api_error",
+        "datacat_website_result",
+        "datacat_website_error",
         "datacat_secure_state_result",
         "datacat_secure_state_error",
         "datacat_clear_verification_result",
@@ -3326,27 +3341,42 @@ export function setup(ctx) {
         "datacat_link_index_error",
         "datacat_character_link_error",
         "datacat_api_error",
+        "datacat_website_error",
         "datacat_secure_state_error",
         "datacat_clear_verification_error",
       ].includes(payload.type)
     ) {
       pending.reject(
-        new Error(
+        Object.assign(new Error(
           String(
             payload.error ||
               "Could not inspect the Lumiverse character library.",
           ),
-        ),
+        ), { code: payload.code }),
       );
       return;
     }
-    if (payload.type === "datacat_api_result") {
+    if (payload.type === "datacat_website_result") {
+      pending.resolve(payload.result || {});
+    } else if (payload.type === "datacat_api_result") {
       pending.resolve(payload.response || {});
     } else if (payload.type === "datacat_secure_state_result") {
       pending.resolve(payload.state || {});
     } else {
       pending.resolve(payload);
     }
+  });
+
+  const accountViews = mountAccountViews({
+    host: accountPages,
+    request: request => datacatBackendRequest("website", request),
+    onCreator: ref => { void openCreator(ref); },
+    onCharacter: row => {
+      const source = /^[a-z0-9_]+$/i.test(row.sourceKind || "") ? `?sourceKind=${encodeURIComponent(row.sourceKind)}` : "";
+      const character = { ...row, clientPaths: { profile: `/characters/${row.id}${source}` } };
+      state.accountCharacters = [...state.accountCharacters.filter(item => item.id !== row.id), character];
+      void openProfile(row.id);
+    },
   });
 
   async function ensureSecureTransportPermission() {
@@ -3683,6 +3713,7 @@ export function setup(ctx) {
   function findCharacterById(id) {
     const normalized = normalizeId(id);
     return (
+      state.accountCharacters.find(row => normalizeId(row.id) === normalized) ||
       state.characters.find((row) => normalizeId(row.id) === normalized) ||
       state.freshWindows.last24h.find(
         (row) => normalizeId(row.id) === normalized,
@@ -4737,14 +4768,14 @@ export function setup(ctx) {
       </section>`;
   }
 
-  function showAccountPage() {
+  function showAccountPage(refresh = false) {
     const view = ACCOUNT_VIEWS[state.viewMode];
     accountPages.hidden = !view;
     catalogScroll.hidden = Boolean(view);
     accountFooter.hidden = false;
     tagsToggle.hidden = Boolean(view);
     if (!view) return;
-    accountPageStatus.textContent = `DataCat does not yet provide ${view.title.toLowerCase()} through its extension API. Your existing account connection is used by this extension; signing in again will not enable this feature.`;
+    accountViews.show(state.viewMode, refresh);
   }
 
   function render() {
@@ -6303,7 +6334,7 @@ export function setup(ctx) {
         ? requestedMode
         : "fresh";
       if (nextMode === state.viewMode) {
-        if (ACCOUNT_VIEWS[nextMode]) showAccountPage();
+        if (ACCOUNT_VIEWS[nextMode]) showAccountPage(true);
         return;
       }
       state.viewMode = nextMode;
@@ -6610,7 +6641,7 @@ export function setup(ctx) {
     }
     if (target.closest("[data-refresh]")) {
       if (ACCOUNT_VIEWS[state.viewMode]) {
-        showAccountPage();
+        showAccountPage(true);
         return;
       }
       void refreshCatalog({ forceLibrary: true });
@@ -6964,6 +6995,7 @@ export function setup(ctx) {
   })();
 
   return () => {
+    accountViews.destroy();
     window.clearTimeout(searchTimer);
     window.clearTimeout(tagSearchTimer);
     window.clearTimeout(linkPollTimer);
