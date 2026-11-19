@@ -1,9 +1,10 @@
 import { uuidv7 } from "./uuidv7.js";
 import { importCreatorName, prepareImportCard } from "./import-metadata.js";
 import { mountAccountViews } from "./account-views.js";
+import { STORE_THEME } from "./store-theme.js";
 
-const VERSION = "0.6.0";
-const DISPLAY_VERSION = "0.6.0";
+const VERSION = "0.7.0";
+const DISPLAY_VERSION = "0.7.0";
 const PAGE_SIZE = 24;
 const CHAT_LOADING_MIN_MS = 750;
 const MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -2914,6 +2915,7 @@ export function setup(ctx) {
         box-shadow: inset 0 -3px 0 #f6c84c;
       }
     }
+    ${STORE_THEME}
   `);
 
   tab.root.classList.add("dcv1-drawer-root");
@@ -2922,7 +2924,7 @@ export function setup(ctx) {
   root.innerHTML = `
     <header class="dcv1-toolbar">
       <div class="dcv1-toolbar-copy">
-        <span class="dcv1-toolbar-brand">Datacat Browser</span>
+        <span class="dcv1-toolbar-brand">DataCat</span>
         <span class="dcv1-version-badge">v${DISPLAY_VERSION}</span>
       </div>
       <button class="dcv1-button dcv1-toolbar-icon dcv1-toolbar-bare" type="button" data-refresh aria-label="Refresh Datacat" title="Refresh Datacat">${REFRESH_ICON}</button>
@@ -2930,14 +2932,13 @@ export function setup(ctx) {
       <div class="dcv1-status" data-status>Connecting…</div>
     </header>
     <nav class="dcv1-view-tabs" aria-label="Datacat browser view">
-      <button class="dcv1-view-tab" type="button" data-view-mode="fresh" data-active="true">Fresh</button>
-      <button class="dcv1-view-tab" type="button" data-view-mode="catalog" data-active="false">Catalog</button>
-      <button class="dcv1-view-tab" type="button" data-view-mode="imports" data-active="false">Imports</button>
-      <button class="dcv1-view-tab" type="button" data-view-mode="following" data-active="false">Following</button>
-      <button class="dcv1-view-tab" type="button" data-view-mode="collections" data-active="false">Collections</button>
-      <button class="dcv1-button dcv1-tag-toggle" type="button" data-tags-toggle aria-expanded="false">Tags</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="fresh" data-active="true">Discover</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="catalog" data-active="false">Browse</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="imports" data-active="false">Library</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="collections" data-active="false">Shelf</button>
     </nav>
     <div class="dcv1-search-row" data-search-row>
+      <button class="dcv1-button dcv1-tag-toggle" type="button" data-tags-toggle aria-expanded="false">Tags</button>
       <div class="dcv1-search-shell">
         <input class="dcv1-search" type="search" placeholder="Search characters, creators, or tags" autocomplete="off" data-search>
         <button class="dcv1-search-clear" type="button" data-clear hidden aria-label="Clear search" title="Clear search">×</button>
@@ -3049,7 +3050,7 @@ export function setup(ctx) {
   const persistedViewMode = ["fresh", "catalog", "following", "collections"].includes(
     persistedBrowserState?.viewMode,
   )
-    ? persistedBrowserState.viewMode
+    ? persistedBrowserState.viewMode === "following" ? "collections" : persistedBrowserState.viewMode
     : "fresh";
   const persistedCreatorRef = String(
     persistedBrowserState?.selectedCreatorRef || "",

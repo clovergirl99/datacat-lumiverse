@@ -9,6 +9,16 @@ function offset(value) {
   return n;
 }
 function text(value, max = 500) { return typeof value === "string" ? value.slice(0, max) : ""; }
+function avatarUrl(row) {
+  for (const value of [row.avatarDisplayUrl, row.avatar_display_url, row.avatarUrl, row.avatar_url, row.avatarVariantUrls?.card, row.avatar_variant_urls?.card, row.avatarSelfArchiveUrl, row.avatar_self_archive_url, row.avatar]) {
+    if (typeof value !== "string") continue;
+    try {
+      const url = new URL(value, ORIGIN);
+      if (url.protocol === "https:" && (value.startsWith("https://") || value.startsWith("/"))) return url.href;
+    } catch (_) {}
+  }
+  return "";
+}
 
 export function createWebsiteAccount(api) {
   async function read(path, userId, candidate, method = "GET") {
@@ -86,15 +96,17 @@ export function createWebsiteAccount(api) {
       const folder = Number(input.folderId);
       if (!Number.isSafeInteger(folder) || folder <= 0) throw fail("INVALID_REQUEST", "Invalid collection.");
       const start = offset(input.offset);
-      const body = await read(`/api/characters?limit=24&offset=${start}&skipCount=1&collectionSection=collected&folderId=${folder}`, userId);
+      const limit = input.preview === true ? 4 : 24;
+      const body = await read(`/api/characters?limit=${limit}&offset=${start}&skipCount=1&collectionSection=collected&folderId=${folder}`, userId);
       if (!Array.isArray(body.characters)) throw fail("WEBSITE_RESPONSE_ERROR", "DataCat did not return collection contents.");
       const rows = body.characters.map(row => ({
         id: text(row.characterId || row.character_id || row.id, 100),
         name: text(row.name || row.chat_name || row.chatName || "Unnamed character", 240),
         creatorName: text(row.creatorName || row.creator_name || (typeof row.creator === "string" ? row.creator : row.creator?.name), 240),
         sourceKind: text(row.characterSourceKind || row.primaryContentSourceKind || row.sourceKind, 50),
+        avatarUrl: avatarUrl(row),
       })).filter(row => UUID.test(row.id));
-      return { rows, nextOffset: start + body.characters.length, hasMore: body.hasMore ?? body.paging?.hasMore ?? body.characters.length === 24 };
+      return { rows, nextOffset: start + body.characters.length, hasMore: body.hasMore ?? body.paging?.hasMore ?? body.characters.length === limit };
     }
     throw fail("INVALID_REQUEST", "Unknown account operation.");
   };

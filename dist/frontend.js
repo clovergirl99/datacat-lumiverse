@@ -90,7 +90,15 @@ var escape = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "
 function mountAccountViews({ host, request, onCreator, onCharacter }) {
   let view = "", source = "janitor", folder = null, rows = [], nextOffset = 0;
   let hasMore = false, connected = null, busy = false, error = "", name = "", serial = 0, disposed = false;
-  let filter = "", saved = false;
+  let filter = "", saved = false, parentView = "", filterOpen = false;
+  let followedRows = [], followingPartial = false;
+  const covers = new Map;
+  function creatorRow(row, attribute) {
+    return `<button class="dcv1-account-row" type="button" ${attribute} ${!row.ref ? "disabled" : ""}>
+      <span class="dcv1-creator-initial" aria-hidden="true">${escape(Array.from(row.name || "?")[0].toUpperCase())}</span>
+      <span class="dcv1-account-row-copy"><strong>${escape(row.name)}</strong><small>${escape(row.characterCount)} characters</small></span>
+      <span class="dcv1-row-arrow" aria-hidden="true">›</span></button>`;
+  }
   function render() {
     if (disposed)
       return;
@@ -109,15 +117,20 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
       </div>`;
       return;
     }
-    const heading = folder?.name || (view === "following" ? "Following" : "Collections");
-    host.innerHTML = `<div class="dcv1-account-tools">
-      <strong>${escape(heading)}</strong>
-      <span>${escape(name ? `Website session · ${name}` : "Website session saved")}</span>
-      <button class="dcv1-button" type="button" data-website-change>Update session</button>
-      <button class="dcv1-button" type="button" data-website-disconnect>Remove saved session</button>
-      ${folder ? '<button class="dcv1-button" type="button" data-account-back>All collections</button>' : ""}
+    const heading = folder?.name || (view === "following" ? "Followed creators" : "");
+    const overview = view === "collections" && !folder;
+    host.innerHTML = `<div class="dcv1-account-tools" data-overview="${overview}">
+      ${heading ? `<strong>${escape(heading)}</strong>` : ""}
+      <div class="dcv1-account-tools-row">
+      ${overview ? `<button class="dcv1-button dcv1-shelf-filter-toggle" type="button" data-account-filter-toggle aria-label="Filter Shelf" aria-expanded="${filterOpen}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button>` : ""}
+      ${folder || view === "following" ? '<button class="dcv1-button" type="button" data-account-back>Back to Shelf</button>' : ""}
       ${view === "following" ? `<label>Source <select data-account-source aria-label="Creator source"><option value="janitor" ${source === "janitor" ? "selected" : ""}>Janitor</option><option value="saucepan" ${source === "saucepan" ? "selected" : ""}>Saucepan</option></select></label>` : ""}
-      <input class="dcv1-search" data-account-search type="search" aria-label="Filter loaded items" placeholder="Filter loaded items" value="${escape(filter)}">
+      <input class="dcv1-search" data-account-search type="search" aria-label="Filter loaded items" placeholder="Filter loaded items" value="${escape(filter)}" ${overview && !filterOpen ? "hidden" : ""}>
+      <details class="dcv1-account-settings"><summary aria-label="Shelf connection settings">Account</summary><div>
+        <span>${escape(name ? `Website session · ${name}` : connected === null ? "Checking connection…" : "Website session saved")}</span>
+        <button class="dcv1-button" type="button" data-website-change>Update session</button>
+        <button class="dcv1-button" type="button" data-website-disconnect>Remove saved session</button>
+      </div></details></div>
     </div>
     <div class="dcv1-account-results" data-account-results></div>
     <p class="dcv1-account-message" role="status">${escape(error || (busy ? "Loading…" : ""))}</p>
@@ -129,10 +142,48 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
     const list = host.querySelector("[data-account-results]");
     if (!list)
       return;
-    list.innerHTML = rows.map((row, index) => ({ row, index })).filter(({ row }) => `${row.name} ${row.creatorName || ""}`.toLowerCase().includes(filter.toLowerCase())).map(({ row, index }) => `<button class="dcv1-account-row" type="button" data-account-row="${index}" ${view === "following" && !row.ref ? "disabled" : ""}>
-      <strong>${escape(row.name)}</strong><span>${escape(view === "following" ? `${row.characterCount} characters` : folder ? row.creatorName : `${row.count} items · ${row.visibility}`)}</span>
-      ${!folder && view === "collections" && row.description ? `<span>${escape(row.description)}</span>` : ""}
-    </button>`).join("") || (busy ? "" : `<p>${rows.length ? "No loaded items match this filter." : view === "following" ? "No followed creators for this source." : folder ? "This collection is empty." : "No collections found."}</p>`);
+    const matches = rows.map((row, index) => ({ row, index })).filter(({ row }) => `${row.name} ${row.creatorName || ""}`.toLowerCase().includes(filter.toLowerCase()));
+    if (view === "collections" && !folder) {
+      const collections = matches.map(({ row, index }) => {
+        const images = covers.get(row.id) || [];
+        const letters = Array.from(row.name.replace(/\s/g, "").toUpperCase());
+        return `<button class="dcv1-collection-tile" type="button" data-account-row="${index}" title="${escape(row.description || row.name)}">
+          <span class="dcv1-collection-art" aria-hidden="true">${Array.from({ length: 4 }, (_, i) => `<span>${escape(letters[i] || "·")}${images[i] ? `<img src="${escape(images[i])}" loading="lazy" alt="">` : ""}</span>`).join("")}</span>
+          <span class="dcv1-collection-info"><strong>${escape(row.name)}</strong><small>${escape(row.count)} ${row.count === 1 ? "card" : "cards"} · ${escape(row.visibility)}</small></span></button>`;
+      }).join("");
+      const followed = followedRows.map((row, index) => ({ row, index })).filter(({ row }) => row.name.toLowerCase().includes(filter.toLowerCase()));
+      list.innerHTML = `<section class="dcv1-shelf-section"><div class="dcv1-shelf-heading"><h3>Collections</h3><span>${rows.length}</span></div>
+        <div class="dcv1-collection-grid">${collections}</div>${!collections && !busy ? "<p>No collections to show.</p>" : ""}</section>
+        <section class="dcv1-shelf-section"><div class="dcv1-shelf-heading"><h3>Followed creators</h3><span>${followedRows.length}${followingPartial ? "+" : ""}</span><button data-account-following type="button">See all</button></div>
+        <div class="dcv1-creator-list">${followed.map(({ row, index }) => creatorRow(row, `data-account-follow="${index}"`)).join("")}</div>
+        ${!followed.length && !busy ? "<p>No followed creators to show.</p>" : ""}</section>`;
+      return;
+    }
+    list.innerHTML = `<div class="dcv1-creator-list">${matches.map(({ row, index }) => view === "following" ? creatorRow(row, `data-account-row="${index}"`) : `<button class="dcv1-account-row" type="button" data-account-row="${index}"><span class="dcv1-creator-initial" aria-hidden="true">${escape(Array.from(row.name || "?")[0])}</span><span class="dcv1-account-row-copy"><strong>${escape(row.name)}</strong><small>${escape(row.creatorName)}</small></span><span class="dcv1-row-arrow" aria-hidden="true">›</span></button>`).join("")}</div>`;
+    if (!matches.length && !busy)
+      list.innerHTML += `<p>${rows.length ? "No loaded items match this filter." : folder ? "This collection is empty." : "No followed creators for this source."}</p>`;
+  }
+  async function loadCovers(ticket) {
+    await Promise.allSettled(rows.slice(0, 8).map(async (row) => {
+      if (covers.has(row.id))
+        return;
+      covers.set(row.id, []);
+      try {
+        const payload = await request({ action: "collection-items", folderId: row.id, preview: true });
+        const images = payload.rows.map((item) => item.avatarUrl).filter((value) => {
+          try {
+            return new URL(value).protocol === "https:";
+          } catch (_) {
+            return false;
+          }
+        }).slice(0, 4);
+        if (disposed)
+          return;
+        covers.set(row.id, images);
+        if (ticket === serial && view === "collections" && !folder)
+          renderRows();
+      } catch (_) {}
+    }));
   }
   async function load(reset = true) {
     const ticket = ++serial;
@@ -155,7 +206,25 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
       if (!connected)
         return;
       const action = view === "following" ? "following" : folder ? "collection-items" : "collections";
-      const payload = await request({ action, source, offset: nextOffset, folderId: folder?.id });
+      let payload;
+      if (action === "collections") {
+        const results = await Promise.allSettled([
+          request({ action }),
+          request({ action: "following", source: "janitor" }),
+          request({ action: "following", source: "saucepan" })
+        ]);
+        if (ticket !== serial || disposed)
+          return;
+        if (results[0].status === "rejected")
+          throw results[0].reason;
+        payload = results[0].value;
+        followedRows = results.slice(1).flatMap((result) => result.status === "fulfilled" ? result.value.rows : []);
+        followingPartial = results.slice(1).some((result) => result.status === "fulfilled" && result.value.hasMore);
+        if (results.slice(1).some((result) => result.status === "rejected"))
+          error = "Some followed creators could not be loaded. Try refreshing Shelf.";
+      } else {
+        payload = await request({ action, source, offset: nextOffset, folderId: folder?.id });
+      }
       if (ticket !== serial || disposed)
         return;
       const combined = reset ? payload.rows : [...rows, ...payload.rows];
@@ -181,6 +250,8 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
       if (ticket === serial && !disposed) {
         busy = false;
         render();
+        if (connected && view === "collections" && !folder)
+          loadCovers(ticket);
       }
     }
   }
@@ -189,6 +260,13 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
     if (!target || !host.contains(target))
       return;
     event.stopPropagation();
+    if (target.hasAttribute("data-account-filter-toggle")) {
+      filterOpen = !filterOpen;
+      render();
+      if (filterOpen)
+        host.querySelector("[data-account-search]")?.focus();
+      return;
+    }
     if (target.hasAttribute("data-website-connect")) {
       if (busy)
         return;
@@ -206,6 +284,9 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
         saved = true;
         name = result.name || "";
         busy = false;
+        followedRows = [];
+        covers.clear();
+        folder = null;
         await load();
       } catch (e) {
         if (ticket !== serial || disposed)
@@ -243,6 +324,8 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
         saved = false;
         name = "";
         rows = [];
+        followedRows = [];
+        covers.clear();
         folder = null;
         error = "";
       } catch (e) {
@@ -259,9 +342,19 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
     if (busy)
       return;
     if (target.hasAttribute("data-account-back")) {
+      view = "collections";
       folder = null;
       filter = "";
       await load();
+    } else if (target.hasAttribute("data-account-following")) {
+      view = "following";
+      folder = null;
+      filter = "";
+      await load();
+    } else if (target.hasAttribute("data-account-follow")) {
+      const row = followedRows[Number(target.dataset.accountFollow)];
+      if (row?.ref)
+        onCreator(row.ref);
     } else if (target.hasAttribute("data-account-more"))
       await load(false);
     else if (target.hasAttribute("data-account-retry"))
@@ -294,19 +387,27 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
       renderRows();
     }
   };
+  const imageError = (event) => {
+    if (event.target.matches?.(".dcv1-collection-art img"))
+      event.target.remove();
+  };
   host.addEventListener("click", click);
   host.addEventListener("change", change);
   host.addEventListener("input", input);
+  host.addEventListener("error", imageError, true);
   return {
     show(nextView, refresh = false) {
-      if (nextView !== view) {
+      if (nextView !== parentView) {
+        parentView = nextView;
         view = nextView;
         folder = null;
         filter = "";
         if (!(busy && connected === false))
           load();
-      } else if (refresh && !busy)
+      } else if (refresh && !busy) {
+        covers.clear();
         load();
+      }
     },
     destroy() {
       disposed = true;
@@ -315,13 +416,143 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
       host.removeEventListener("click", click);
       host.removeEventListener("change", change);
       host.removeEventListener("input", input);
+      host.removeEventListener("error", imageError, true);
     }
   };
 }
 
+// src/store-theme.js
+var STORE_THEME = `
+  .dcv1-root, .dcv1-page-modal-host {
+    --dc-bg: #0c0b10;
+    --dc-panel: #111015;
+    --dc-panel-2: #19161f;
+    --dc-border: rgba(171, 151, 204, .12);
+    --dc-text: #e5e2ea;
+    --dc-muted: #827b8d;
+    --dc-yellow: #ac92d5;
+    --dc-purple: #ac92d5;
+    font-family: var(--lumiverse-font-family, system-ui, sans-serif);
+    font-size: 12px;
+    line-height: 1.45;
+    color-scheme: dark;
+  }
+  .dcv1-root { background: var(--dc-bg); }
+  .dcv1-toolbar { padding: 6px 12px; gap: 6px; background: #111015; border-color: var(--dc-border); }
+  .dcv1-toolbar-brand { color: var(--dc-text); font-size: 12px; font-weight: 650; letter-spacing: -.15px; }
+  .dcv1-version-badge { background: transparent; border: 0; color: #665d74; font-size: 8px; padding: 0; }
+  .dcv1-toolbar-icon { width: 25px; min-height: 25px; }
+  .dcv1-toolbar-icon svg { width: 16px; height: 16px; }
+  .dcv1-toolbar-close { min-width: 24px; font-size: 18px; }
+  .dcv1-view-tabs { margin: 8px 10px 12px; padding: 2px; gap: 3px; border: 1px solid var(--dc-border); border-radius: 8px; background: transparent; scrollbar-width: none; }
+  .dcv1-view-tabs::-webkit-scrollbar { display: none; }
+  .dcv1-view-tab { flex: 1 1 0; min-width: 0; min-height: 24px; padding: 0 7px; border: 1px solid transparent; border-radius: 6px; font-size: 11px; font-weight: 500; color: var(--dc-muted); white-space: nowrap; }
+  .dcv1-view-tab:hover { color: var(--dc-text); background: #151219; }
+  .dcv1-view-tab[data-active="true"] { color: #b69adf; background: #211a2b; border-color: rgba(172,146,213,.18); box-shadow: none; }
+  .dcv1-search-row { grid-template-columns: auto minmax(0,1fr) 36px; padding: 0 12px 10px; gap: 7px; background: transparent; }
+  .dcv1-button, .dcv1-search { border-color: var(--dc-border); border-radius: 7px; font-size: 11px; min-height: 30px; }
+  .dcv1-button { background: #151219; color: #c5bdce; }
+  .dcv1-button:hover:not(:disabled) { border-color: rgba(172,146,213,.35); background: #201a29; }
+  .dcv1-button[data-primary], .dcv1-card [data-import], .dcv1-fresh-row [data-import] { color: #d9c8f0; background: #2a2038; border: 1px solid #40304f; border-radius: 7px; }
+  .dcv1-button[data-primary]:hover:not(:disabled) { background: #362747; }
+  .dcv1-search { background: #0f0d13; color: var(--dc-text); }
+  .dcv1-search::placeholder { color: #645d70; }
+  .dcv1-search:focus { border-color: #76608e; box-shadow: 0 0 0 2px rgba(172,146,213,.09); }
+  .dcv1-sort-trigger, .dcv1-sort-menu, .dcv1-menu-panel { background: #141118; border-color: var(--dc-border); }
+  .dcv1-sort-trigger { border-radius: 7px; }
+  .dcv1-sort-trigger svg { width: 18px; height: 18px; }
+  .dcv1-sort-badge { color: #c3acd9; background: #292034; border-color: #443351; }
+  .dcv1-scroll, .dcv1-account-pages, .dcv1-tag-groups { scrollbar-width: thin; scrollbar-color: #342a3e transparent; }
+  .dcv1-scroll::-webkit-scrollbar, .dcv1-account-pages::-webkit-scrollbar { width: 5px; }
+  .dcv1-scroll::-webkit-scrollbar-thumb, .dcv1-account-pages::-webkit-scrollbar-thumb { background: #342a3e; border-radius: 5px; }
+  .dcv1-grid { grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 12px; padding: 4px 12px 16px; }
+  .dcv1-card { background: #100e14; border: 1px solid var(--dc-border); border-radius: 10px; }
+  .dcv1-cover-wrap { border-radius: 8px 8px 0 0; }
+  .dcv1-card-body { padding: 9px; gap: 6px; }
+  .dcv1-card-title { font-size: 12px; font-weight: 650; }
+  .dcv1-card-author, .dcv1-card-author .dcv1-creator-link { color: #9e91ae; }
+  .dcv1-cover-missing { background: #1b1523; color: #9b7dbf; }
+  .dcv1-fresh-section { padding: 6px 0; }
+  .dcv1-fresh-head { padding: 4px 0 10px; }
+  .dcv1-fresh-head strong { font-size: 12px; font-weight: 650; }
+  .dcv1-fresh-list { gap: 10px; }
+  .dcv1-fresh-row { min-height: 145px; padding: 10px; border: 1px solid var(--dc-border); border-radius: 10px; background: #100e14; grid-template-columns: 84px minmax(0,1fr) 53px; gap: 7px; }
+  .dcv1-fresh-row:last-child { border: 1px solid var(--dc-border); padding-bottom: 10px; }
+  .dcv1-fresh-cover { width: 84px; min-height: 112px; border-radius: 7px; background: #1b1523; }
+  .dcv1-fresh-title { font-size: 12px; font-weight: 650; }
+  .dcv1-fresh-description { color: #8a8194; font-size: 11px; font-style: normal; line-height: 1.45; }
+  .dcv1-fresh-creator, .dcv1-fresh-meta { font-size: 10px; }
+  .dcv1-tag, .dcv1-chip { border: 1px solid var(--dc-border); background: #1b1523; color: #a89ab9; box-shadow: none; }
+  .dcv1-tag[data-selected="true"], .dcv1-chip { background: #292034; color: #d2bce9; }
+  .dcv1-tag-panel, .dcv1-character-modal, .dcv1-local-character-modal { background: #111015; border-color: var(--dc-border); }
+  .dcv1-character-modal-head, .dcv1-character-modal-actions { background: #111015; border-color: var(--dc-border); }
+  .dcv1-imports { padding: 4px 0; }
+  .dcv1-import-row { padding: 8px; border: 1px solid var(--dc-border); border-radius: 9px; background: #100e14; }
+  .dcv1-imports-head strong { font-size: 12px; }
+  .dcv1-account-footer { padding: 5px 12px calc(5px + env(safe-area-inset-bottom,0px)); background: #0f0d13; border-top: 1px solid var(--dc-border); }
+  .dcv1-account-summary { font-size: 9px; color: #81748f; }
+  .dcv1-account-pages { position: relative; padding: 0 12px 16px; gap: 0; }
+  .dcv1-account-tools { padding: 0 0 12px; gap: 8px; }
+  .dcv1-account-tools > strong { font-size: 12px; font-weight: 650; }
+  .dcv1-account-tools-row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; width: 100%; }
+  .dcv1-account-tools-row .dcv1-search { flex: 1; min-width: 0; width: auto; }
+  .dcv1-account-tools[data-overview="false"] .dcv1-search { flex: 1 1 150px; }
+  .dcv1-account-tools[data-overview="true"] { position: absolute; top: 0; right: 12px; z-index: 4; padding: 0; }
+  .dcv1-account-tools[data-overview="true"] .dcv1-account-tools-row { gap: 5px; }
+  .dcv1-account-tools[data-overview="true"] .dcv1-search { position: absolute; top: 33px; right: 0; width: min(240px,70vw); background: #16121c; }
+  .dcv1-account-tools .dcv1-search[hidden] { display: none; }
+  .dcv1-shelf-filter-toggle { display: grid; place-items: center; width: 25px; min-height: 25px; padding: 0; background: transparent; }
+  .dcv1-account-tools[data-overview="true"] .dcv1-account-settings summary { padding: 4px 7px; font-size: 10px; }
+  .dcv1-account-settings { position: relative; flex: 0 0 auto; color: var(--dc-muted); font-size: 11px; }
+  .dcv1-account-settings summary { list-style: none; cursor: pointer; border: 1px solid var(--dc-border); border-radius: 7px; padding: 6px 9px; }
+  .dcv1-account-settings summary::-webkit-details-marker { display: none; }
+  .dcv1-account-settings > div { position: absolute; top: calc(100% + 5px); right: 0; width: 195px; z-index: 12; padding: 9px; display: grid; gap: 7px; background: #16121c; border: 1px solid var(--dc-border); border-radius: 8px; box-shadow: 0 8px 25px #0008; }
+  .dcv1-account-results { padding: 0; }
+  .dcv1-shelf-section { margin: 0 0 20px; }
+  .dcv1-shelf-heading { display: flex; align-items: center; gap: 8px; margin: 3px 0 9px; }
+  .dcv1-shelf-heading h3 { margin: 0; font-size: 12px; font-weight: 650; }
+  .dcv1-shelf-heading > span { color: #665d74; font-size: 10px; }
+  .dcv1-shelf-heading button { margin-left: auto; border: 0; background: transparent; color: #9f87bf; cursor: pointer; font: inherit; font-size: 10px; padding: 4px 0 4px 8px; }
+  .dcv1-collection-grid { display: grid; grid-template-columns: repeat(auto-fill,112px); gap: 9px; }
+  .dcv1-collection-tile { min-width: 0; padding: 0; overflow: hidden; text-align: left; background: #0e0c12; border: 1px solid var(--dc-border); border-radius: 10px; color: var(--dc-text); cursor: pointer; font: inherit; }
+  .dcv1-collection-tile:hover { border-color: #51405f; }
+  .dcv1-collection-art { display: grid; grid-template-columns: repeat(2,1fr); aspect-ratio: 1.5; overflow: hidden; gap: 1px; background: #0c0b10; }
+  .dcv1-collection-art > span { display: grid; place-items: center; position: relative; overflow: hidden; background: linear-gradient(140deg,#33273e,#16111d); color: #8a6da7; font-size: 18px; font-weight: 500; }
+  .dcv1-collection-art > span:nth-child(2) { background: linear-gradient(140deg,#26313e,#121923); color: #6c8baf; }
+  .dcv1-collection-art > span:nth-child(3) { background: linear-gradient(140deg,#2c3430,#171c1a); color: #7b9a89; }
+  .dcv1-collection-art > span:nth-child(4) { background: linear-gradient(140deg,#3b2f36,#1a1217); color: #a48597; }
+  .dcv1-collection-art img { position: absolute; width: 100%; height: 100%; object-fit: cover; inset: 0; }
+  .dcv1-collection-info { display: grid; gap: 3px; padding: 9px; }
+  .dcv1-collection-info strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; font-weight: 650; }
+  .dcv1-collection-info small { color: #776d83; font-size: 9px; }
+  .dcv1-creator-list { display: grid; gap: 5px; }
+  .dcv1-account-row { flex-direction: row; align-items: center; gap: 10px; padding: 5px 8px; border: 1px solid var(--dc-border); border-radius: 9px; background: #0d0b10; }
+  .dcv1-account-row:hover { background: #17121d; border-color: #382b45; }
+  .dcv1-creator-initial { width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center; border-radius: 50%; background: #241c30; color: #aa8bd0; font-size: 14px; font-weight: 650; }
+  .dcv1-account-row .dcv1-account-row-copy { display: grid; gap: 2px; min-width: 0; flex: 1; }
+  .dcv1-account-row strong { color: var(--dc-text); font-size: 11px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dcv1-account-row small { font-size: 10px; color: #766a86; }
+  .dcv1-account-row .dcv1-row-arrow { color: #695777; font-size: 17px; padding: 0 4px; }
+  .dcv1-account-page-note { margin: 2px 0; padding: 14px; background: #111015; border: 1px solid var(--dc-border); border-radius: 10px; color: var(--dc-muted); font-size: 11px; }
+  .dcv1-account-page-note h3 { color: var(--dc-text); font-size: 13px; margin-top: 0; }
+  .dcv1-account-message { margin: 4px 0 9px; }
+  button.dcv1-native-launch[data-spindle-ext-id="datacat_client_v1"],
+  button.dcv1-native-launch[data-active="true"] { color: #a68bc9 !important; background: transparent !important; box-shadow: none !important; border-left: 0 !important; }
+  .dcv1-native-launch::before, .dcv1-native-launch::after { display: none !important; }
+  @media(max-width:420px) {
+    .dcv1-toolbar { padding: 6px 10px; }
+    .dcv1-view-tabs { margin: 8px 10px; }
+    .dcv1-view-tab { padding: 0 5px; font-size: 10px; }
+    .dcv1-grid { grid-template-columns: repeat(2,minmax(0,1fr)); padding: 4px 10px 14px; gap: 9px; }
+    .dcv1-collection-grid { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px; }
+    .dcv1-collection-info { padding: 8px 6px; }
+    .dcv1-account-pages { padding-left: 10px; padding-right: 10px; }
+  }
+`;
+
 // src/frontend.js
-var VERSION = "0.6.0";
-var DISPLAY_VERSION = "0.6.0";
+var VERSION = "0.7.0";
+var DISPLAY_VERSION = "0.7.0";
 var PAGE_SIZE = 24;
 var CHAT_LOADING_MIN_MS = 750;
 var MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -3129,6 +3360,7 @@ function setup(ctx) {
         box-shadow: inset 0 -3px 0 #f6c84c;
       }
     }
+    ${STORE_THEME}
   `);
   tab.root.classList.add("dcv1-drawer-root");
   const root = document.createElement("section");
@@ -3136,7 +3368,7 @@ function setup(ctx) {
   root.innerHTML = `
     <header class="dcv1-toolbar">
       <div class="dcv1-toolbar-copy">
-        <span class="dcv1-toolbar-brand">Datacat Browser</span>
+        <span class="dcv1-toolbar-brand">DataCat</span>
         <span class="dcv1-version-badge">v${DISPLAY_VERSION}</span>
       </div>
       <button class="dcv1-button dcv1-toolbar-icon dcv1-toolbar-bare" type="button" data-refresh aria-label="Refresh Datacat" title="Refresh Datacat">${REFRESH_ICON}</button>
@@ -3144,14 +3376,13 @@ function setup(ctx) {
       <div class="dcv1-status" data-status>Connecting…</div>
     </header>
     <nav class="dcv1-view-tabs" aria-label="Datacat browser view">
-      <button class="dcv1-view-tab" type="button" data-view-mode="fresh" data-active="true">Fresh</button>
-      <button class="dcv1-view-tab" type="button" data-view-mode="catalog" data-active="false">Catalog</button>
-      <button class="dcv1-view-tab" type="button" data-view-mode="imports" data-active="false">Imports</button>
-      <button class="dcv1-view-tab" type="button" data-view-mode="following" data-active="false">Following</button>
-      <button class="dcv1-view-tab" type="button" data-view-mode="collections" data-active="false">Collections</button>
-      <button class="dcv1-button dcv1-tag-toggle" type="button" data-tags-toggle aria-expanded="false">Tags</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="fresh" data-active="true">Discover</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="catalog" data-active="false">Browse</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="imports" data-active="false">Library</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="collections" data-active="false">Shelf</button>
     </nav>
     <div class="dcv1-search-row" data-search-row>
+      <button class="dcv1-button dcv1-tag-toggle" type="button" data-tags-toggle aria-expanded="false">Tags</button>
       <div class="dcv1-search-shell">
         <input class="dcv1-search" type="search" placeholder="Search characters, creators, or tags" autocomplete="off" data-search>
         <button class="dcv1-search-clear" type="button" data-clear hidden aria-label="Clear search" title="Clear search">×</button>
@@ -3253,7 +3484,7 @@ function setup(ctx) {
     }
   }
   const persistedBrowserState = readPersistedBrowserState();
-  const persistedViewMode = ["fresh", "catalog", "following", "collections"].includes(persistedBrowserState?.viewMode) ? persistedBrowserState.viewMode : "fresh";
+  const persistedViewMode = ["fresh", "catalog", "following", "collections"].includes(persistedBrowserState?.viewMode) ? persistedBrowserState.viewMode === "following" ? "collections" : persistedBrowserState.viewMode : "fresh";
   const persistedCreatorRef = String(persistedBrowserState?.selectedCreatorRef || "").trim();
   const state = {
     initializing: true,

@@ -6,6 +6,18 @@ you want, import it, and start chatting without leaving your app.
 
 ## For Lumiverse users
 
+### Storefront appearance (v0.7.0)
+
+This fork now uses a near-black storefront with subtle purple accents, compact
+segmented tabs, and the navigation **Discover / Browse / Library / Shelf**.
+Shelf combines collection tiles and followed-creator rows in one view. Tiles
+show available card images from the first few collections, with initial mosaics
+as a fallback. **See all** opens the paged creator list with its source selector.
+Collection contents, search, tag filtering, imports, and existing connections
+keep their original behavior. The sidebar cat has no yellow active background
+or border. The appearance is inspired by ShiruStore; its separate local-only
+follow and collection storage is not used here. Reference: [ShiruStore](https://github.com/shirunick/lumi-shirustore).
+
 ### This fork: native Following and Collections
 
 Version 0.6.0 adds native **Following** and **Collections** views. Following
@@ -23,7 +35,7 @@ one-time transfer of your **existing website session**, not another login:
 1. In the desktop browser where you are already signed in to `datacat.run`,
    open Developer Tools (F12), then Console.
 2. Run `copy(localStorage.getItem("liberator_session_token") || "")`.
-3. In Lumiverse, open Following or Collections and paste the value into
+3. In Lumiverse, open Shelf and paste the value into
    **Existing DataCat website session**, then choose **Save session and load**.
 
 The value is an account credential: paste it only into your own Lumiverse
@@ -32,7 +44,7 @@ saved in Lumiverse's encrypted, per-user enclave. It is not stored in browser
 local/session storage, included in frontend responses, or sent to other hosts.
 The extension's existing Client API account remains separate.
 
-After setup, these tabs load inside Lumiverse without frames or external
+After setup, these views load inside Lumiverse without frames or external
 navigation. Android and desktop share the saved session if they use the same
 Lumiverse server/user. If they run separate servers, paste the session once
 into each. DataCat can expire or revoke website sessions; **Update session**

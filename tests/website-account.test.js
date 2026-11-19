@@ -82,6 +82,18 @@ test("reject arbitrary URLs, invalid sources, folder ids and paging before netwo
   assert.equal(f.calls.length, 0);
 });
 
+test("collection tile previews request four cards and use only secure image URLs", async () => {
+  const f = fixture({ success: true, characters: [
+    { id: creatorId, name: "Example", avatarDisplayUrl: "https://media.datacat.run/example.webp" },
+    { id: "11111111-1111-4111-8111-111111111111", name: "Unsafe image", avatar: "javascript:alert(1)" },
+  ] });
+  f.secrets.set(`alice:${KEY}`, token);
+  const result = await f.run({ action: "collection-items", folderId: 7, preview: true }, "alice");
+  assert.equal(new URL(f.calls[0].url).searchParams.get("limit"), "4");
+  assert.equal(result.rows[0].avatarUrl, "https://media.datacat.run/example.webp");
+  assert.equal(result.rows[1].avatarUrl, "");
+});
+
 test("do not surface server or network errors that could contain session credentials", async () => {
   const f = fixture({ success: false, message: token }, 500);
   f.secrets.set(`alice:${KEY}`, token);
