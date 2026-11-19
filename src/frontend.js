@@ -3,8 +3,8 @@ import { importCreatorName, prepareImportCard } from "./import-metadata.js";
 import { mountAccountViews } from "./account-views.js";
 import { STORE_THEME } from "./store-theme.js";
 
-const VERSION = "0.7.0";
-const DISPLAY_VERSION = "0.7.0";
+const VERSION = "0.7.1";
+const DISPLAY_VERSION = "0.7.1";
 const PAGE_SIZE = 24;
 const CHAT_LOADING_MIN_MS = 750;
 const MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -27,12 +27,11 @@ const BROWSER_STATE_KEY = `${STORAGE_PREFIX}:browser_state`;
 let datacatBackendRequest = null;
 let verificationLeaseState = null;
 
-const CAT_ICON = `
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M5.2 8.3 7 3.9l4.1 2.2c.6-.1 1.2-.1 1.8 0L17 3.9l1.8 4.4c1.3 1.4 2 3.2 2 5.1 0 4.3-3.9 7.6-8.8 7.6s-8.8-3.3-8.8-7.6c0-1.9.7-3.7 2-5.1Z" fill="currentColor"/>
-    <circle cx="8.6" cy="12.2" r="1.15" fill="#17101f"/>
-    <circle cx="15.4" cy="12.2" r="1.15" fill="#17101f"/>
-    <path d="M9.4 16c1.7 1 3.5 1 5.2 0" fill="none" stroke="#17101f" stroke-width="1.5" stroke-linecap="round"/>
+const STORE_ICON = `
+  <svg viewBox="0 0 24 24" aria-hidden="true" data-icon="heart-cards" fill="none">
+    <path d="M5 2h16v18H5z" fill="currentColor" fill-opacity=".08"/>
+    <path d="M5 2h16v18H5zM2 6v16h15" stroke="currentColor" stroke-width="1.5" stroke-linejoin="miter"/>
+    <path d="M8 7h4v2h2V7h4v5h-2v2h-2v2h-2v-2h-2v-2H8z" fill="var(--dc-icon-fill, currentColor)"/>
   </svg>`;
 
 const KUDOS_ICON = `
@@ -83,7 +82,7 @@ function escapeAttribute(value) {
 function renderLoadingState(label) {
   return `
     <div class="dcv1-empty dcv1-loading-state" role="status" aria-live="polite">
-      <span class="dcv1-loader-visual" aria-hidden="true">${CAT_ICON}</span>
+      <span class="dcv1-loader-visual" aria-hidden="true">${STORE_ICON}</span>
       <span class="dcv1-loader-copy">${escapeHtml(label)}</span>
     </div>`;
 }
@@ -499,7 +498,7 @@ export function setup(ctx) {
     headerTitle: "Datacat",
     description: "Browse and import Datacat characters.",
     keywords: ["datacat", "characters", "browse", "import"],
-    iconSvg: CAT_ICON,
+    iconSvg: STORE_ICON,
   });
 
   const removeStyle = ctx.dom.addStyle(`
@@ -2924,7 +2923,7 @@ export function setup(ctx) {
   root.innerHTML = `
     <header class="dcv1-toolbar">
       <div class="dcv1-toolbar-copy">
-        <span class="dcv1-toolbar-brand">DataCat</span>
+        <span class="dcv1-toolbar-brand">${STORE_ICON}<span>DataCat</span></span>
         <span class="dcv1-version-badge">v${DISPLAY_VERSION}</span>
       </div>
       <button class="dcv1-button dcv1-toolbar-icon dcv1-toolbar-bare" type="button" data-refresh aria-label="Refresh Datacat" title="Refresh Datacat">${REFRESH_ICON}</button>
@@ -3394,7 +3393,7 @@ export function setup(ctx) {
 
   function setStatus(message, error = false) {
     status.textContent = message;
-    status.style.color = error ? "#ff9da8" : "";
+    status.style.color = error ? "var(--dc-danger, #a03f61)" : "";
   }
 
   function setMenuOpen(open) {
@@ -4216,7 +4215,7 @@ export function setup(ctx) {
         <div class="dcv1-cover-wrap">
           ${avatarUrl
             ? `<img class="dcv1-cover" src="${escapeAttribute(avatarUrl)}" alt="" loading="lazy">`
-            : `<div class="dcv1-cover-missing">${CAT_ICON}<span>Image pending</span></div>`}
+            : `<div class="dcv1-cover-missing">${STORE_ICON}<span>Image pending</span></div>`}
           ${isSaved ? '<span class="dcv1-added-badge">Added</span>' : ""}
           ${publishedBadge
             ? `<time class="dcv1-card-date" datetime="${escapeAttribute(publishedValue)}" title="${escapeAttribute(readableDate(publishedValue))}">${escapeHtml(publishedBadge)}</time>`
@@ -4499,7 +4498,7 @@ export function setup(ctx) {
             <div class="dcv1-character-hero">
               ${avatarUrl
                 ? `<img class="dcv1-cover" src="${escapeAttribute(avatarUrl)}" alt="">`
-                : `<div class="dcv1-cover-missing">${CAT_ICON}<span>Image pending</span></div>`}
+                : `<div class="dcv1-cover-missing">${STORE_ICON}<span>Image pending</span></div>`}
               <div class="dcv1-score-badge" data-tier="${escapeAttribute(score.tier)}" title="Datacat score">
                 <strong>${escapeHtml(score.label)}</strong>
                 <span>${escapeHtml(score.detail)}</span>
@@ -4612,7 +4611,7 @@ export function setup(ctx) {
                 <div class="dcv1-creator-media">
                   ${creatorAvatar
                     ? `<img class="dcv1-profile-avatar" src="${escapeAttribute(creatorAvatar)}" alt="">`
-                    : `<div class="dcv1-profile-avatar dcv1-cover-missing">${CAT_ICON}</div>`}
+                    : `<div class="dcv1-profile-avatar dcv1-cover-missing">${STORE_ICON}</div>`}
                 </div>
                 <div class="dcv1-creator-tag-panel">
                   <div class="dcv1-creator-tag-heading">Tags</div>
@@ -4714,7 +4713,7 @@ export function setup(ctx) {
         <div class="dcv1-fresh-cover">
           ${avatarUrl
             ? `<img class="dcv1-cover" src="${escapeAttribute(avatarUrl)}" alt="" loading="lazy">`
-            : `<div class="dcv1-cover-missing">${CAT_ICON}<span>Image pending</span></div>`}
+            : `<div class="dcv1-cover-missing">${STORE_ICON}<span>Image pending</span></div>`}
           ${publishedBadge
             ? `<time class="dcv1-fresh-date" datetime="${escapeAttribute(publishedValue)}" title="${escapeAttribute(readableDate(publishedValue))}">${escapeHtml(publishedBadge)}</time>`
             : ""}
@@ -6900,7 +6899,7 @@ export function setup(ctx) {
     title: "Browse Datacat",
     "aria-label": "Browse Datacat",
   });
-  charactersLaunchButton.innerHTML = CAT_ICON;
+  charactersLaunchButton.innerHTML = STORE_ICON;
   const activateDatacat = () => tab.activate();
   charactersLaunchButton.addEventListener("click", activateDatacat);
 

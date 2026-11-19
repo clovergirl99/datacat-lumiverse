@@ -6,6 +6,16 @@ you want, import it, and start chatting without leaving your app.
 
 ## For Lumiverse users
 
+### Angel.OS Light palette (v0.7.1)
+
+The storefront now uses white and pale-pink surfaces, baby-pink accents, and
+readable rose text. It inherits Angel.OS's `--faye-*` palette variables, with
+matching light fallbacks, and uses the theme's Pixelify fonts when available.
+Menus, filters, profile details, loading states, and score badges share the
+palette. The cat icon is replaced with pixel-heart cards in the sidebar,
+header, and loading placeholders. The sidebar still has no active background
+or left border.
+
 ### Storefront appearance (v0.7.0)
 
 This fork now uses a near-black storefront with subtle purple accents, compact
@@ -14,8 +24,8 @@ Shelf combines collection tiles and followed-creator rows in one view. Tiles
 show available card images from the first few collections, with initial mosaics
 as a fallback. **See all** opens the paged creator list with its source selector.
 Collection contents, search, tag filtering, imports, and existing connections
-keep their original behavior. The sidebar cat has no yellow active background
-or border. The appearance is inspired by ShiruStore; its separate local-only
+keep their original behavior. The sidebar button has no yellow active background
+or border. The layout is inspired by ShiruStore; its separate local-only
 follow and collection storage is not used here. Reference: [ShiruStore](https://github.com/shirunick/lumi-shirustore).
 
 ### This fork: native Following and Collections
