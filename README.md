@@ -6,6 +6,13 @@ you want, import it, and start chatting without leaving your app.
 
 ## For Lumiverse users
 
+### Optional tag imports (v0.7.3)
+
+Uncheck **Import tags** below the browser tabs before importing a character to
+leave its Lumiverse tags empty. The choice is remembered on this device and
+applies to all character import buttons. It starts enabled for existing behavior.
+Catalog tag filters and already imported characters are unaffected.
+
 ### Angel.OS Light palette (v0.7.1)
 
 The storefront now uses white and pale-pink surfaces, baby-pink accents, and
@@ -168,3 +175,4 @@ catalogue browser, import workflow, or Datacat-connected experience.
 ```bash
 bun run build
 ```
+

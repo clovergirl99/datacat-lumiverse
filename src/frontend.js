@@ -3,8 +3,8 @@ import { importCreatorName, prepareImportCard } from "./import-metadata.js";
 import { mountAccountViews } from "./account-views.js";
 import { STORE_THEME } from "./store-theme.js";
 
-const VERSION = "0.7.2";
-const DISPLAY_VERSION = "0.7.2";
+const VERSION = "0.7.3";
+const DISPLAY_VERSION = "0.7.3";
 const PAGE_SIZE = 24;
 const CHAT_LOADING_MIN_MS = 750;
 const MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -187,6 +187,14 @@ function loadTagViewMode() {
       : "cloud";
   } catch (_) {
     return "cloud";
+  }
+}
+
+function loadImportTagsPreference() {
+  try {
+    return localStorage.getItem(storageKey("import_tags")) !== "false";
+  } catch (_) {
+    return true;
   }
 }
 
@@ -850,6 +858,27 @@ export function setup(ctx) {
     .dcv1-view-tab[data-active="true"] {
       color: var(--dc-yellow);
       border-bottom-color: var(--dc-yellow);
+    }
+    .dcv1-import-options {
+      flex: 0 0 auto;
+      padding: 5px 12px;
+      color: var(--dc-muted);
+      font-size: 11px;
+    }
+    .dcv1-import-options label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      cursor: pointer;
+    }
+    .dcv1-import-options input {
+      margin: 0;
+      accent-color: var(--dc-yellow);
+    }
+    .dcv1-import-options label:has(input:disabled) {
+      opacity: .6;
+      cursor: wait;
     }
     .dcv1-search-row {
       flex: 0 0 auto;
@@ -2943,6 +2972,12 @@ export function setup(ctx) {
       <button class="dcv1-view-tab" type="button" data-view-mode="imports" data-active="false">Library</button>
       <button class="dcv1-view-tab" type="button" data-view-mode="collections" data-active="false">Shelf</button>
     </nav>
+    <div class="dcv1-import-options">
+      <label title="Include the character's tags when importing into Lumiverse">
+        <input type="checkbox" data-import-tags ${loadImportTagsPreference() ? "checked" : ""}>
+        <span>Import tags</span>
+      </label>
+    </div>
     <div class="dcv1-search-row" data-search-row>
       <button class="dcv1-button dcv1-tag-toggle" type="button" data-tags-toggle aria-expanded="false">Tags</button>
       <div class="dcv1-search-shell">
@@ -3009,6 +3044,15 @@ export function setup(ctx) {
   document.body.append(modalHost);
 
   const grid = root.querySelector("[data-grid]");
+  const importTagsToggle = root.querySelector("[data-import-tags]");
+  const handleImportTagsChange = () => {
+    try {
+      localStorage.setItem(storageKey("import_tags"), String(importTagsToggle.checked));
+    } catch (_) {
+      // The selection still applies to this session if storage is unavailable.
+    }
+  };
+  importTagsToggle.addEventListener("change", handleImportTagsChange);
   const searchRow = root.querySelector("[data-search-row]");
   const viewModeButtons = [
     ...root.querySelectorAll("[data-view-mode]"),
@@ -4804,6 +4848,7 @@ export function setup(ctx) {
   }
 
   function render() {
+    importTagsToggle.disabled = Boolean(state.importId);
     const isAccountPage = Boolean(ACCOUNT_VIEWS[state.viewMode]);
     if (isAccountPage) setStatus("");
     showAccountPage();
@@ -5958,6 +6003,7 @@ export function setup(ctx) {
       return;
     }
     const summary = findCharacterById(id) || state.selected;
+    const importTags = importTagsToggle.checked;
     const requestedName = summary?.name || "character";
     let lumiverseCharacter = null;
     const existingLease = getVerificationLease();
@@ -6012,7 +6058,7 @@ export function setup(ctx) {
         }
       }
       const importedAt = new Date().toISOString();
-      const card = prepareImportCard(rawCard, importCharacter, importedAt);
+      const card = prepareImportCard(rawCard, importCharacter, importedAt, { importTags });
       const avatarFile = await withImportVerification(
         requestedName,
         verificationPopup,
@@ -7057,6 +7103,7 @@ export function setup(ctx) {
 
   return () => {
     accountViews.destroy();
+    importTagsToggle.removeEventListener("change", handleImportTagsChange);
     window.clearTimeout(searchTimer);
     window.clearTimeout(tagSearchTimer);
     window.clearTimeout(linkPollTimer);
@@ -7121,3 +7168,4 @@ export function setup(ctx) {
     removeStyle();
   };
 }
+

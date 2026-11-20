@@ -55,3 +55,28 @@ test("reject an invalid card before sending it to Lumiverse", () => {
     assert.throws(() => prepareImportCard(card, creator, importedAt), /invalid character card/);
   }
 });
+
+for (const spec of [null, "chara_card_v2", "chara_card_v3"]) {
+  test(`skip tags in ${spec || "flat"} cards without changing prompts or embedded lore`, () => {
+    const data = {
+      name: "Example", tags: ["Fantasy", "OC"], description: "Keep the prompt",
+      first_mes: "Keep the greeting", alternate_greetings: ["Keep the alternatives"],
+      character_book: { entries: [{ keys: ["Fantasy"], content: "Keep lore" }] },
+      extensions: { custom: { tags: ["Preserve extension data"] } },
+    };
+    const input = spec ? { spec, data, tags: ["Flat fallback"] } : data;
+    const before = structuredClone(input);
+    const result = prepareImportCard(input, creator, importedAt, { importTags: false });
+    const updated = spec ? result.data : result;
+    assert.deepEqual(updated.tags, []);
+    if (spec) assert.deepEqual(result.tags, []);
+    for (const key of ["name", "description", "first_mes", "alternate_greetings", "character_book"]) {
+      assert.deepEqual(updated[key], data[key]);
+    }
+    assert.deepEqual(updated.extensions.custom, data.extensions.custom);
+    assert.deepEqual(input, before, "the downloaded card must not be mutated");
+    const enabled = prepareImportCard(input, creator, importedAt, { importTags: true });
+    assert.deepEqual((spec ? enabled.data : enabled).tags, data.tags);
+  });
+}
+

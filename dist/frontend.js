@@ -61,13 +61,18 @@ function cleanCreatorNotes(notes) {
   const stamp = /\[retrieved by https\\?:\/\/datacat\.run on \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC\]/gi;
   return notes.replace(stamp, "");
 }
-function prepareImportCard(card, character, importedAt) {
+function prepareImportCard(card, character, importedAt, { importTags = true } = {}) {
   if (!record(card))
     throw new Error("DataCat returned an invalid character card.");
   const result = { ...card };
   const data = record(card.data) ? { ...card.data } : result;
   if (data !== result)
     result.data = data;
+  if (importTags === false) {
+    data.tags = [];
+    if (data !== result && Object.hasOwn(result, "tags"))
+      result.tags = [];
+  }
   const originalCreator = typeof data.creator === "string" ? data.creator.trim() : "";
   data.creator = importCreatorName(character) || creatorName(originalCreator);
   if (typeof data.creator_notes === "string") {
@@ -624,8 +629,8 @@ var STORE_THEME = `
 `;
 
 // src/frontend.js
-var VERSION = "0.7.2";
-var DISPLAY_VERSION = "0.7.2";
+var VERSION = "0.7.3";
+var DISPLAY_VERSION = "0.7.3";
 var PAGE_SIZE = 24;
 var CHAT_LOADING_MIN_MS = 750;
 var MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -783,6 +788,13 @@ function loadTagViewMode() {
     return localStorage.getItem(storageKey("tag_view")) === "list" ? "list" : "cloud";
   } catch (_) {
     return "cloud";
+  }
+}
+function loadImportTagsPreference() {
+  try {
+    return localStorage.getItem(storageKey("import_tags")) !== "false";
+  } catch (_) {
+    return true;
   }
 }
 function saveTagViewMode(mode) {
@@ -1368,6 +1380,27 @@ function setup(ctx) {
     .dcv1-view-tab[data-active="true"] {
       color: var(--dc-yellow);
       border-bottom-color: var(--dc-yellow);
+    }
+    .dcv1-import-options {
+      flex: 0 0 auto;
+      padding: 5px 12px;
+      color: var(--dc-muted);
+      font-size: 11px;
+    }
+    .dcv1-import-options label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      cursor: pointer;
+    }
+    .dcv1-import-options input {
+      margin: 0;
+      accent-color: var(--dc-yellow);
+    }
+    .dcv1-import-options label:has(input:disabled) {
+      opacity: .6;
+      cursor: wait;
     }
     .dcv1-search-row {
       flex: 0 0 auto;
@@ -3460,6 +3493,12 @@ function setup(ctx) {
       <button class="dcv1-view-tab" type="button" data-view-mode="imports" data-active="false">Library</button>
       <button class="dcv1-view-tab" type="button" data-view-mode="collections" data-active="false">Shelf</button>
     </nav>
+    <div class="dcv1-import-options">
+      <label title="Include the character's tags when importing into Lumiverse">
+        <input type="checkbox" data-import-tags ${loadImportTagsPreference() ? "checked" : ""}>
+        <span>Import tags</span>
+      </label>
+    </div>
     <div class="dcv1-search-row" data-search-row>
       <button class="dcv1-button dcv1-tag-toggle" type="button" data-tags-toggle aria-expanded="false">Tags</button>
       <div class="dcv1-search-shell">
@@ -3525,6 +3564,13 @@ function setup(ctx) {
   modalHost.setAttribute("aria-hidden", "true");
   document.body.append(modalHost);
   const grid = root.querySelector("[data-grid]");
+  const importTagsToggle = root.querySelector("[data-import-tags]");
+  const handleImportTagsChange = () => {
+    try {
+      localStorage.setItem(storageKey("import_tags"), String(importTagsToggle.checked));
+    } catch (_) {}
+  };
+  importTagsToggle.addEventListener("change", handleImportTagsChange);
   const searchRow = root.querySelector("[data-search-row]");
   const viewModeButtons = [
     ...root.querySelectorAll("[data-view-mode]")
@@ -4904,6 +4950,7 @@ function setup(ctx) {
     accountViews.show(state.viewMode, refresh);
   }
   function render() {
+    importTagsToggle.disabled = Boolean(state.importId);
     const isAccountPage = Boolean(ACCOUNT_VIEWS[state.viewMode]);
     if (isAccountPage)
       setStatus("");
@@ -5820,6 +5867,7 @@ function setup(ctx) {
       return;
     }
     const summary = findCharacterById(id) || state.selected;
+    const importTags = importTagsToggle.checked;
     const requestedName = summary?.name || "character";
     let lumiverseCharacter = null;
     const existingLease = getVerificationLease();
@@ -5857,7 +5905,7 @@ function setup(ctx) {
         } catch (_) {}
       }
       const importedAt = new Date().toISOString();
-      const card = prepareImportCard(rawCard, importCharacter, importedAt);
+      const card = prepareImportCard(rawCard, importCharacter, importedAt, { importTags });
       const avatarFile = await withImportVerification(requestedName, verificationPopup, () => downloadMirroredAvatar(transfer.character, transfer.avatarPath));
       closeVerificationPopup(verificationPopup);
       const importResponse = await fetch("/api/v1/characters/import", {
@@ -6723,6 +6771,7 @@ function setup(ctx) {
   })();
   return () => {
     accountViews.destroy();
+    importTagsToggle.removeEventListener("change", handleImportTagsChange);
     window.clearTimeout(searchTimer);
     window.clearTimeout(tagSearchTimer);
     window.clearTimeout(linkPollTimer);

@@ -20,12 +20,17 @@ export function cleanCreatorNotes(notes) {
   return notes.replace(stamp, "");
 }
 
-export function prepareImportCard(card, character, importedAt) {
+export function prepareImportCard(card, character, importedAt, { importTags = true } = {}) {
   if (!record(card)) throw new Error("DataCat returned an invalid character card.");
   const result = { ...card };
   // Support flat cards and Character Card V2/V3 data envelopes.
   const data = record(card.data) ? { ...card.data } : result;
   if (data !== result) result.data = data;
+  if (importTags === false) {
+    data.tags = [];
+    // Clear a flat fallback too when an envelope contains both representations.
+    if (data !== result && Object.hasOwn(result, "tags")) result.tags = [];
+  }
   const originalCreator = typeof data.creator === "string" ? data.creator.trim() : "";
   data.creator = importCreatorName(character) || creatorName(originalCreator);
   if (typeof data.creator_notes === "string") {
@@ -43,3 +48,4 @@ export function prepareImportCard(card, character, importedAt) {
   };
   return result;
 }
+
