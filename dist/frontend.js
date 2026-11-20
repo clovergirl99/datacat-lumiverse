@@ -624,8 +624,8 @@ var STORE_THEME = `
 `;
 
 // src/frontend.js
-var VERSION = "0.7.1";
-var DISPLAY_VERSION = "0.7.1";
+var VERSION = "0.7.2";
+var DISPLAY_VERSION = "0.7.2";
 var PAGE_SIZE = 24;
 var CHAT_LOADING_MIN_MS = 750;
 var MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -1676,6 +1676,13 @@ function setup(ctx) {
     .dcv1-tag-view-toggle button[data-active="true"] {
       color: #211509;
       background: var(--dc-yellow);
+    }
+    .dcv1-tag-mode { grid-column: 1 / -1; }
+    .dcv1-tag-mode button { flex: 1; }
+    .dcv1-tag-panel [data-blocked="true"], .dcv1-chip[data-blocked="true"] {
+      color: var(--dc-text);
+      border-color: #d895a7;
+      background: rgba(216, 149, 167, .14);
     }
     .dcv1-tag-groups {
       min-height: 0;
@@ -3475,7 +3482,7 @@ function setup(ctx) {
     <aside class="dcv1-tag-panel" data-tag-panel data-open="false" aria-hidden="true" aria-label="Browse Datacat tags">
       <header class="dcv1-tag-drawer-head">
         <span class="dcv1-tag-drawer-handle" aria-hidden="true"></span>
-        <div class="dcv1-tag-drawer-title">Browse tags<span>Choose multiple tags to narrow the catalog</span></div>
+        <div class="dcv1-tag-drawer-title">Browse tags</div>
         <button class="dcv1-button" type="button" data-tags-close>Close</button>
       </header>
       <div class="dcv1-tag-tools">
@@ -3484,6 +3491,10 @@ function setup(ctx) {
         <div class="dcv1-tag-view-toggle" role="group" aria-label="Tag view">
           <button type="button" data-tag-view="list">List</button>
           <button type="button" data-tag-view="cloud">Cloud</button>
+        </div>
+        <div class="dcv1-tag-view-toggle dcv1-tag-mode" role="group" aria-label="Tag filter mode">
+          <button type="button" data-tag-mode="include">Include tags</button>
+          <button type="button" data-tag-mode="block">Block tags</button>
         </div>
       </div>
       <div class="dcv1-tag-groups" data-tag-groups></div>
@@ -3532,6 +3543,7 @@ function setup(ctx) {
   const tagGroups = root.querySelector("[data-tag-groups]");
   const tagStatus = root.querySelector("[data-tag-status]");
   const tagSort = root.querySelector("[data-tag-sort]");
+  const tagModeButtons = root.querySelectorAll("[data-tag-mode]");
   const tagViewButtons = [
     ...root.querySelectorAll("[data-tag-view]")
   ];
@@ -3610,6 +3622,8 @@ function setup(ctx) {
     tags: [],
     tagGroups: [],
     selectedTagIds: new Set(Array.isArray(persistedBrowserState?.selectedTagIds) ? persistedBrowserState.selectedTagIds.map(Number).filter((id) => Number.isFinite(id) && id > 0) : []),
+    blockedTags: new Map(Array.isArray(persistedBrowserState?.blockedTags) ? persistedBrowserState.blockedTags.filter((tag) => Array.isArray(tag) && Number.isSafeInteger(tag[0]) && tag[0] > 0 && typeof tag[1] === "string") : []),
+    tagMode: "include",
     tagPanelOpen: persistedBrowserState?.tagPanelOpen === true,
     tagQuery: String(persistedBrowserState?.tagQuery || "").slice(0, 80),
     tagSort: persistedBrowserState?.tagSort === "alpha" ? "alpha" : "count",
@@ -3663,6 +3677,7 @@ function setup(ctx) {
         query: state.query,
         catalogSort: state.catalogSort,
         selectedTagIds: [...state.selectedTagIds],
+        blockedTags: [...state.blockedTags],
         tagPanelOpen: state.tagPanelOpen,
         tagQuery: state.tagQuery,
         tagSort: state.tagSort,
@@ -3881,21 +3896,42 @@ function setup(ctx) {
     tagPanel.dataset.open = String(state.tagPanelOpen);
     tagPanel.setAttribute("aria-hidden", String(!state.tagPanelOpen));
     tagScrim.dataset.open = String(state.tagPanelOpen);
-    tagsToggle.dataset.active = String(state.tagPanelOpen || state.selectedTagIds.size > 0);
+    const filterCount = state.selectedTagIds.size + state.blockedTags.size;
+    tagsToggle.dataset.active = String(state.tagPanelOpen || filterCount > 0);
     tagsToggle.setAttribute("aria-expanded", String(state.tagPanelOpen));
-    tagsToggle.textContent = state.selectedTagIds.size ? `Tags (${state.selectedTagIds.size})` : "Tags";
+    tagsToggle.textContent = filterCount ? `Tags (${filterCount})` : "Tags";
+  }
+  function renderTagChoice(tag, className, style = "") {
+    const id = Number(tag.id);
+    const included = state.selectedTagIds.has(id);
+    const blocked = state.blockedTags.has(id);
+    const active = state.tagMode === "block" ? blocked : included;
+    const name = escapeHtml(tag.name);
+    return `
+      <button class="${className}" type="button" data-tag-id="${id}" data-selected="${included}" data-blocked="${blocked}" aria-pressed="${active}" ${style}>
+        <span>${blocked ? "Blocked: " : ""}${name}</span>
+        <span class="dcv1-tag-count">${compactNumber(tag.count)}</span>
+      </button>`;
   }
   function renderTagBrowser() {
     const previousScrollTop = tagGroups.scrollTop;
     syncTagPanelVisibility();
-    const selected = selectedTags();
-    filterChips.hidden = state.viewMode !== "catalog" || selected.length === 0;
-    filterChips.innerHTML = selected.length ? `${selected.map((tag) => `
-              <button class="dcv1-chip" type="button" data-tag-remove="${Number(tag.id)}" title="Remove ${escapeAttribute(tag.name)}">
-                ${escapeHtml(tag.name)}
-                <span aria-hidden="true">×</span>
-              </button>`).join("")}
+    const filters = [
+      ...selectedTags().map((tag) => ({ id: Number(tag.id), name: tag.name, blocked: false })),
+      ...[...state.blockedTags].map(([id, name]) => ({ id, name, blocked: true }))
+    ];
+    filterChips.hidden = state.viewMode !== "catalog" || filters.length === 0;
+    filterChips.innerHTML = filters.length ? `${filters.map(({ id, name, blocked }) => `
+          <button class="dcv1-chip" type="button" data-tag-remove="${id}" data-blocked="${blocked}" aria-label="${blocked ? "Unblock" : "Remove"} ${escapeAttribute(name)}">
+            ${blocked ? "Blocked: " : ""}${escapeHtml(name)}
+            <span aria-hidden="true">×</span>
+          </button>`).join("")}
          <button class="dcv1-tag" type="button" data-tags-clear>Clear tags</button>` : "";
+    for (const button of tagModeButtons) {
+      const active = button.dataset.tagMode === state.tagMode;
+      button.dataset.active = String(active);
+      button.setAttribute("aria-pressed", String(active));
+    }
     tagSort.textContent = state.tagSort === "alpha" ? "A–Z" : "Most used";
     for (const button of tagViewButtons) {
       const active = button.dataset.tagView === state.tagView;
@@ -3933,7 +3969,8 @@ function setup(ctx) {
     let content = "";
     if (state.tagView === "cloud" && state.tags.length > 0) {
       const cloudTags = [...state.tags].sort((a, b) => {
-        const selectedDelta = Number(state.selectedTagIds.has(Number(b.id))) - Number(state.selectedTagIds.has(Number(a.id)));
+        const activeTags = state.tagMode === "block" ? state.blockedTags : state.selectedTagIds;
+        const selectedDelta = Number(activeTags.has(Number(b.id))) - Number(activeTags.has(Number(a.id)));
         if (selectedDelta)
           return selectedDelta;
         return state.tagSort === "alpha" ? String(a.name || "").localeCompare(String(b.name || "")) : Number(b.count || 0) - Number(a.count || 0) || String(a.name || "").localeCompare(String(b.name || ""));
@@ -3943,11 +3980,7 @@ function setup(ctx) {
         <div class="dcv1-tag-cloud">
           ${cloudTags.map((tag) => {
         const heat = Math.max(0, Math.min(1, Number(tag.count || 0) / maxCount)).toFixed(3);
-        return `
-                <button class="dcv1-tag-cloud-item" type="button" data-tag-id="${Number(tag.id)}" data-selected="${state.selectedTagIds.has(Number(tag.id))}" style="--heat:${heat}">
-                  <span>${escapeHtml(tag.name)}</span>
-                  <span class="dcv1-tag-count">${compactNumber(tag.count)}</span>
-                </button>`;
+        return renderTagChoice(tag, "dcv1-tag-cloud-item", `style="--heat:${heat}"`);
       }).join("")}
         </div>`;
     } else if (ordered.length > 0) {
@@ -3957,11 +3990,7 @@ function setup(ctx) {
             <section class="dcv1-tag-group">
               <div class="dcv1-tag-group-title">${escapeHtml(group?.name || "Other")}</div>
               <div class="dcv1-tag-list">
-                ${tags.map((tag) => `
-                      <button class="dcv1-tag" type="button" data-tag-id="${Number(tag.id)}" data-selected="${state.selectedTagIds.has(Number(tag.id))}">
-                        <span>${escapeHtml(tag.name)}</span>
-                        <span class="dcv1-tag-count">${compactNumber(tag.count)}</span>
-                      </button>`).join("")}
+                ${tags.map((tag) => renderTagChoice(tag, "dcv1-tag")).join("")}
               </div>
             </section>`;
       }).join("");
@@ -5080,12 +5109,13 @@ function setup(ctx) {
     await Promise.all(loads);
   }
   async function loadTags({ reset = false } = {}) {
-    if (state.tagLoading || state.tagLoadingMore)
+    if (!reset && (state.tagLoading || state.tagLoadingMore))
       return;
     const serial = ++state.tagSerial;
     state.tagError = "";
     if (reset) {
       state.tagLoading = true;
+      state.tagLoadingMore = false;
       state.tagHasMore = false;
       state.tagTotal = 0;
       tagGroups.scrollTop = 0;
@@ -5116,15 +5146,23 @@ function setup(ctx) {
       state.tagTotal = Math.max(state.tags.length, Number(payload.paging?.totalCount || 0));
       state.tagHasMore = payload.paging?.hasMore === true;
     } catch (error) {
+      if (serial !== state.tagSerial)
+        return;
       state.tagError = error.retryAfter ? `${publicErrorMessage(error, "Could not load Datacat tags.")} Retry in ${error.retryAfter}s.` : publicErrorMessage(error, "Could not load Datacat tags.");
     } finally {
-      state.tagLoading = false;
-      state.tagLoadingMore = false;
-      renderTagBrowser();
+      if (serial === state.tagSerial) {
+        state.tagLoading = false;
+        state.tagLoadingMore = false;
+        renderTagBrowser();
+      }
     }
   }
-  async function updateSelectedTags(nextIds) {
-    state.selectedTagIds = new Set([...nextIds].map(Number).filter((id) => Number.isFinite(id) && id > 0));
+  async function updateTagFilters(included, blocked = state.blockedTags) {
+    const includedChanged = included.size !== state.selectedTagIds.size || [...included].some((id) => !state.selectedTagIds.has(id));
+    const blockedChanged = blocked.size !== state.blockedTags.size || [...blocked.keys()].some((id) => !state.blockedTags.has(id));
+    state.selectedTagIds = included;
+    state.blockedTags = blocked;
+    persistBrowserStateNow();
     state.selectedSerial += 1;
     state.selected = null;
     state.selectedLoading = false;
@@ -5133,9 +5171,12 @@ function setup(ctx) {
     state.selectedCreatorRef = "";
     state.creatorCharacters = [];
     renderProfile();
+    if (blockedChanged)
+      state.characters = [];
+    renderTagBrowser();
     await Promise.all([
-      loadTags({ reset: true }),
-      loadCharacters({ reset: true, preserveExisting: true })
+      includedChanged && loadTags({ reset: true }),
+      loadCharacters({ reset: true, preserveExisting: !blockedChanged })
     ]);
   }
   async function selectTagByText(value) {
@@ -5168,21 +5209,26 @@ function setup(ctx) {
     }
     state.viewMode = "catalog";
     state.tagPanelOpen = true;
-    const next = new Set(state.selectedTagIds);
-    next.add(Number(tag.id));
-    await updateSelectedTags(next);
+    const id = Number(tag.id);
+    if (!Number.isSafeInteger(id) || id <= 0)
+      return;
+    const included = new Set(state.selectedTagIds).add(id);
+    const blocked = new Map(state.blockedTags);
+    blocked.delete(id);
+    await updateTagFilters(included, blocked);
   }
   async function loadCharacters({
     reset = false,
     preserveExisting = false
   } = {}) {
-    if (state.loading || state.loadingMore)
+    if (!reset && (state.loading || state.loadingMore))
       return;
     const serial = ++state.serial;
     state.error = "";
     state.loadMoreError = "";
     if (reset) {
       state.loading = true;
+      state.loadingMore = false;
       state.hasMore = false;
       catalogScroll.scrollTop = 0;
     } else {
@@ -5202,6 +5248,9 @@ function setup(ctx) {
       if (state.selectedTagIds.size) {
         params.set("tagIds", [...state.selectedTagIds].join(","));
       }
+      if (state.blockedTags.size) {
+        params.set("blockedTagIds", [...state.blockedTags.keys()].join(","));
+      }
       const payload = await datacatFetch(`/characters?${params}`);
       if (serial !== state.serial)
         return;
@@ -5211,6 +5260,8 @@ function setup(ctx) {
       state.hasMore = payload.paging?.hasMore === true;
       updateCatalogStatus();
     } catch (error) {
+      if (serial !== state.serial)
+        return;
       const message = error.retryAfter ? `${publicErrorMessage(error, "Could not load Datacat.")} Retry in ${error.retryAfter}s.` : publicErrorMessage(error, "Could not load Datacat.");
       if (reset || state.characters.length === 0) {
         state.error = message;
@@ -5219,9 +5270,11 @@ function setup(ctx) {
       }
       setStatus(message, true);
     } finally {
-      state.loading = false;
-      state.loadingMore = false;
-      render();
+      if (serial === state.serial) {
+        state.loading = false;
+        state.loadingMore = false;
+        render();
+      }
     }
   }
   function appendUniqueCharacters(existing, incoming) {
@@ -6145,27 +6198,44 @@ function setup(ctx) {
       }
       return;
     }
+    const tagModeButton = target.closest("[data-tag-mode]");
+    if (tagModeButton) {
+      state.tagMode = tagModeButton.dataset.tagMode;
+      renderTagBrowser();
+      return;
+    }
     const tagButton = target.closest("[data-tag-id]");
     if (tagButton) {
-      const tagId = Number(tagButton.getAttribute("data-tag-id"));
-      const next = new Set(state.selectedTagIds);
-      if (next.has(tagId))
-        next.delete(tagId);
-      else
-        next.add(tagId);
-      updateSelectedTags(next);
+      const id = Number(tagButton.dataset.tagId);
+      const tag = tagById(id);
+      if (!Number.isSafeInteger(id) || id <= 0 || !tag)
+        return;
+      const included = new Set(state.selectedTagIds);
+      const blocked = new Map(state.blockedTags);
+      if (state.tagMode === "block") {
+        if (!blocked.delete(id))
+          blocked.set(id, tag.name);
+        included.delete(id);
+      } else {
+        if (!included.delete(id))
+          included.add(id);
+        blocked.delete(id);
+      }
+      updateTagFilters(included, blocked);
       return;
     }
     const removeTagButton = target.closest("[data-tag-remove]");
     if (removeTagButton) {
-      const tagId = Number(removeTagButton.getAttribute("data-tag-remove"));
-      const next = new Set(state.selectedTagIds);
-      next.delete(tagId);
-      updateSelectedTags(next);
+      const id = Number(removeTagButton.dataset.tagRemove);
+      const included = new Set(state.selectedTagIds);
+      const blocked = new Map(state.blockedTags);
+      included.delete(id);
+      blocked.delete(id);
+      updateTagFilters(included, blocked);
       return;
     }
     if (target.closest("[data-tags-clear]")) {
-      updateSelectedTags(new Set);
+      updateTagFilters(new Set, new Map);
       return;
     }
     if (target.closest("[data-tag-sort]")) {
