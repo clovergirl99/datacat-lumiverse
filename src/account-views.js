@@ -33,7 +33,7 @@ export function mountAccountViews({ host, request, onCreator, onCharacter }) {
       </div>`;
       return;
     }
-    const heading = folder?.name || (view === "following" ? "Followed creators" : "");
+    const heading = folder?.name || (view === "following" ? "Followed creators" : view === "library" ? "DataCat library" : "");
     const overview = view === "collections" && !folder;
     host.innerHTML = `<div class="dcv1-account-tools" data-overview="${overview}">
       ${heading ? `<strong>${escape(heading)}</strong>` : ""}
@@ -42,7 +42,7 @@ export function mountAccountViews({ host, request, onCreator, onCharacter }) {
       ${folder || view === "following" ? '<button class="dcv1-button" type="button" data-account-back>Back to Shelf</button>' : ""}
       ${view === "following" ? `<label>Source <select data-account-source aria-label="Creator source"><option value="janitor" ${source === "janitor" ? "selected" : ""}>Janitor</option><option value="saucepan" ${source === "saucepan" ? "selected" : ""}>Saucepan</option></select></label>` : ""}
       <input class="dcv1-search" data-account-search type="search" aria-label="Filter loaded items" placeholder="Filter loaded items" value="${escape(filter)}" ${overview && !filterOpen ? "hidden" : ""}>
-      <details class="dcv1-account-settings"><summary aria-label="Shelf connection settings">Account</summary><div>
+      <details class="dcv1-account-settings"><summary aria-label="DataCat website connection settings">Account</summary><div>
         <span>${escape(name ? `Website session · ${name}` : connected === null ? "Checking connection…" : "Website session saved")}</span>
         <button class="dcv1-button" type="button" data-website-change>Update session</button>
         <button class="dcv1-button" type="button" data-website-disconnect>Remove saved session</button>
@@ -78,7 +78,7 @@ export function mountAccountViews({ host, request, onCreator, onCharacter }) {
       return;
     }
     list.innerHTML = `<div class="dcv1-creator-list">${matches.map(({ row, index }) => view === "following" ? creatorRow(row, `data-account-row="${index}"`) : `<button class="dcv1-account-row" type="button" data-account-row="${index}"><span class="dcv1-creator-initial" aria-hidden="true">${escape(Array.from(row.name || "?")[0])}</span><span class="dcv1-account-row-copy"><strong>${escape(row.name)}</strong><small>${escape(row.creatorName)}</small></span><span class="dcv1-row-arrow" aria-hidden="true">›</span></button>`).join("")}</div>`;
-    if (!matches.length && !busy) list.innerHTML += `<p>${rows.length ? "No loaded items match this filter." : folder ? "This collection is empty." : "No followed creators for this source."}</p>`;
+    if (!matches.length && !busy && !error) list.innerHTML += `<p>${rows.length ? "No loaded items match this filter." : folder ? "This collection is empty." : view === "library" ? "Your DataCat library is empty." : "No followed creators for this source."}</p>`;
   }
 
   async function loadCovers(ticket) {
@@ -110,7 +110,7 @@ export function mountAccountViews({ host, request, onCreator, onCharacter }) {
         saved = connected;
       }
       if (!connected) return;
-      const action = view === "following" ? "following" : folder ? "collection-items" : "collections";
+      const action = view === "library" ? "library" : view === "following" ? "following" : folder ? "collection-items" : "collections";
       let payload;
       if (action === "collections") {
         const results = await Promise.allSettled([
@@ -204,7 +204,7 @@ export function mountAccountViews({ host, request, onCreator, onCharacter }) {
       const row = rows[Number(target.dataset.accountRow)];
       if (!row) return;
       if (view === "following") onCreator(row.ref);
-      else if (folder) onCharacter(row);
+      else if (folder || view === "library") onCharacter(row);
       else { folder = row; filter = ""; await load(); }
     }
   };
@@ -222,6 +222,10 @@ export function mountAccountViews({ host, request, onCreator, onCharacter }) {
   host.addEventListener("input", input);
   host.addEventListener("error", imageError, true);
   return {
+    hide() {
+      if (!parentView) return;
+      parentView = ""; view = ""; ++serial; busy = false; connected = null;
+    },
     show(nextView, refresh = false) {
       if (nextView !== parentView) {
         parentView = nextView;
@@ -239,3 +243,4 @@ export function mountAccountViews({ host, request, onCreator, onCharacter }) {
     },
   };
 }
+

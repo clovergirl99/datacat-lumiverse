@@ -70,6 +70,47 @@ test("load private collections and their contents using the selected folder", as
   assert.equal(result.rows[0].id, creatorId);
 });
 
+test("Library reads the whole website library, including link-added cards outside folders", async () => {
+  const f = fixture({ success: true, characters: [
+    { characterId: creatorId, name: "Added via link", creatorName: "Binaria01", characterSourceKind: "janitor_core" },
+    { character_id: "11111111-1111-4111-8111-111111111111", chat_name: "In a folder", creator_name: "Another creator" },
+  ], hasMore: true });
+  f.secrets.set(`alice:${KEY}`, token);
+  const result = await f.run({ action: "library", offset: 24, folderId: 7, preview: true }, "alice");
+  const url = new URL(f.calls[0].url);
+  assert.equal(url.pathname, "/api/characters");
+  assert.equal(url.searchParams.get("collectionSection"), "collected");
+  assert.equal(url.searchParams.get("sort"), "added");
+  assert.equal(url.searchParams.get("offset"), "24");
+  assert.equal(url.searchParams.get("limit"), "24");
+  assert.equal(url.searchParams.has("folderId"), false);
+  assert.equal(url.searchParams.has("mainOnly"), false);
+  assert.equal(f.calls[0].options.headers["X-Session-Token"], token);
+  assert.deepEqual(result.rows.map(row => row.name), ["Added via link", "In a folder"]);
+  assert.equal(result.rows[0].sourceKind, "janitor_core");
+  assert.equal(result.nextOffset, 26);
+  assert.equal(result.hasMore, true);
+});
+
+test("Library preserves pagination when invalid rows are filtered", async () => {
+  const f = fixture({ success: true, characters: [{ id: "invalid" }, { id: creatorId, name: "Valid" }], paging: { hasMore: false } });
+  f.secrets.set(`alice:${KEY}`, token);
+  const result = await f.run({ action: "library", offset: 24 }, "alice");
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.nextOffset, 26);
+  assert.equal(result.hasMore, false);
+});
+
+test("Library rejects bad paging, uses the current user's session, and reports malformed responses", async () => {
+  const f = fixture({ success: true });
+  f.secrets.set(`alice:${KEY}`, token);
+  await assert.rejects(f.run({ action: "library", offset: -1 }, "alice"), { code: "INVALID_REQUEST" });
+  assert.equal(f.calls.length, 0);
+  await assert.rejects(f.run({ action: "library" }, "bob"), { code: "WEBSITE_SESSION_REQUIRED" });
+  assert.equal(f.calls.length, 0);
+  await assert.rejects(f.run({ action: "library" }, "alice"), { code: "WEBSITE_RESPONSE_ERROR" });
+});
+
 test("reject arbitrary URLs, invalid sources, folder ids and paging before network access", async () => {
   const f = fixture();
   for (const input of [
@@ -120,3 +161,4 @@ test("remove only this user's transferred session, without logging out DataCat o
   assert.equal(f.secrets.get("alice:datacat.access_token"), "linked-client-token");
   assert.equal(f.calls.length, 0);
 });
+

@@ -1,10 +1,10 @@
 {
   "name": "datacat-lumiverse-client",
   "private": true,
-  "version": "0.7.4",
+  "version": "0.7.5",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/import-metadata.test.js tests/website-account.test.js tests/tag-preferences.test.js",
+    "test": "node --test tests/import-metadata.test.js tests/website-account.test.js tests/tag-preferences.test.js tests/account-views.test.js",
     "build": "bun run build:frontend && bun run build:backend",
     "build:frontend": "bun build src/frontend.js --outfile dist/frontend.js --target browser",
     "build:backend": "bun build src/backend.js --outfile dist/backend.js --target bun --format esm"

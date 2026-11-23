@@ -6,6 +6,14 @@ you want, import it, and start chatting without leaving your app.
 
 ## For Lumiverse users
 
+### DataCat Library (v0.7.5)
+
+**Library → DataCat library** now loads your website library, including characters
+added by link and characters inside collections, using the same saved website
+connection as Shelf. Pages are ordered by when you added the cards. Reopen Library
+or use Refresh to load website changes. Search filters the currently loaded rows.
+Your existing local imports remain available under **Library → In Lumiverse**.
+
 ### Remember blocked tags (v0.7.4)
 
 Blocked catalog tags are saved on this device and restored after closing and

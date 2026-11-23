@@ -149,15 +149,17 @@ function createWebsiteAccount(api) {
         visibility: row.visibility === "published" ? "Published" : "Private"
       })) };
     }
-    if (action === "collection-items") {
+    if (action === "collection-items" || action === "library") {
+      const library = action === "library";
       const folder = Number(input.folderId);
-      if (!Number.isSafeInteger(folder) || folder <= 0)
+      if (!library && (!Number.isSafeInteger(folder) || folder <= 0))
         throw fail("INVALID_REQUEST", "Invalid collection.");
       const start = offset(input.offset);
-      const limit = input.preview === true ? 4 : 24;
-      const body = await read(`/api/characters?limit=${limit}&offset=${start}&skipCount=1&collectionSection=collected&folderId=${folder}`, userId);
+      const limit = !library && input.preview === true ? 4 : 24;
+      const scope = library ? "&sort=added" : `&folderId=${folder}`;
+      const body = await read(`/api/characters?limit=${limit}&offset=${start}&skipCount=1&collectionSection=collected${scope}`, userId);
       if (!Array.isArray(body.characters))
-        throw fail("WEBSITE_RESPONSE_ERROR", "DataCat did not return collection contents.");
+        throw fail("WEBSITE_RESPONSE_ERROR", library ? "DataCat did not return your library." : "DataCat did not return collection contents.");
       const rows = body.characters.map((row) => ({
         id: text(row.characterId || row.character_id || row.id, 100),
         name: text(row.name || row.chat_name || row.chatName || "Unnamed character", 240),
@@ -178,7 +180,7 @@ var DATACAT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 var DEFAULT_DATACAT_ORIGIN = "https://datacat.run";
 var DATACAT_API_PREFIX = "/api/client/v1";
 var DATACAT_CLIENT_ID = "datacat_lumiverse";
-var DATACAT_CLIENT_VERSION = "0.7.4";
+var DATACAT_CLIENT_VERSION = "0.7.5";
 var INSTALLATION_KEY = "datacat.installation_id";
 var ACCESS_TOKEN_KEY = "datacat.access_token";
 var VERIFICATION_LEASE_KEY = "datacat.verification_lease";

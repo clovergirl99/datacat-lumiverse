@@ -4,8 +4,8 @@ import { mountAccountViews } from "./account-views.js";
 import { STORE_THEME } from "./store-theme.js";
 import { loadBlockedTags, saveBlockedTags } from "./tag-preferences.js";
 
-const VERSION = "0.7.4";
-const DISPLAY_VERSION = "0.7.4";
+const VERSION = "0.7.5";
+const DISPLAY_VERSION = "0.7.5";
 const PAGE_SIZE = 24;
 const CHAT_LOADING_MIN_MS = 750;
 const MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -18,6 +18,7 @@ const CATALOG_SORT_OPTIONS = Object.freeze([
 const PROD_ORIGIN = "https://datacat.run";
 // Account lists use an explicitly transferred website session via the backend.
 const ACCOUNT_VIEWS = Object.freeze({
+  library: { title: "Library" },
   following: { title: "Following" },
   collections: { title: "Collections" },
 });
@@ -860,6 +861,13 @@ export function setup(ctx) {
       color: var(--dc-yellow);
       border-bottom-color: var(--dc-yellow);
     }
+    .dcv1-library-tabs {
+      display: flex;
+      flex: 0 0 auto;
+      gap: 6px;
+      padding: 0 12px 6px;
+    }
+    .dcv1-library-tabs[hidden] { display: none; }
     .dcv1-import-options {
       flex: 0 0 auto;
       padding: 5px 12px;
@@ -2970,9 +2978,13 @@ export function setup(ctx) {
     <nav class="dcv1-view-tabs" aria-label="Datacat browser view">
       <button class="dcv1-view-tab" type="button" data-view-mode="fresh" data-active="true">Discover</button>
       <button class="dcv1-view-tab" type="button" data-view-mode="catalog" data-active="false">Browse</button>
-      <button class="dcv1-view-tab" type="button" data-view-mode="imports" data-active="false">Library</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="library" data-library-main data-active="false">Library</button>
       <button class="dcv1-view-tab" type="button" data-view-mode="collections" data-active="false">Shelf</button>
     </nav>
+    <div class="dcv1-library-tabs" data-library-tabs hidden role="group" aria-label="Library source">
+      <button class="dcv1-view-tab" type="button" data-view-mode="library">DataCat library</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="imports">In Lumiverse</button>
+    </div>
     <div class="dcv1-import-options">
       <label title="Include the character's tags when importing into Lumiverse">
         <input type="checkbox" data-import-tags ${loadImportTagsPreference() ? "checked" : ""}>
@@ -3045,6 +3057,7 @@ export function setup(ctx) {
   document.body.append(modalHost);
 
   const grid = root.querySelector("[data-grid]");
+  const libraryTabs = root.querySelector("[data-library-tabs]");
   const importTagsToggle = root.querySelector("[data-import-tags]");
   const handleImportTagsChange = () => {
     try {
@@ -3103,7 +3116,7 @@ export function setup(ctx) {
   }
 
   const persistedBrowserState = readPersistedBrowserState();
-  const persistedViewMode = ["fresh", "catalog", "following", "collections"].includes(
+  const persistedViewMode = ["fresh", "catalog", "library", "imports", "following", "collections"].includes(
     persistedBrowserState?.viewMode,
   )
     ? persistedBrowserState.viewMode === "following" ? "collections" : persistedBrowserState.viewMode
@@ -4837,7 +4850,7 @@ export function setup(ctx) {
     catalogScroll.hidden = Boolean(view);
     accountFooter.hidden = false;
     tagsToggle.hidden = Boolean(view);
-    if (!view) return;
+    if (!view) { accountViews.hide(); return; }
     accountViews.show(state.viewMode, refresh);
   }
 
@@ -4848,10 +4861,13 @@ export function setup(ctx) {
     showAccountPage();
     const isFresh = state.viewMode === "fresh";
     const isImports = state.viewMode === "imports";
+    libraryTabs.hidden = state.viewMode !== "library" && !isImports;
     syncCatalogSortControl();
     searchClear.hidden = !state.query;
     for (const button of viewModeButtons) {
-      const active = button.dataset.viewMode === state.viewMode;
+      const active = button.hasAttribute("data-library-main")
+        ? state.viewMode === "library" || isImports
+        : button.dataset.viewMode === state.viewMode;
       button.dataset.active = String(active);
       button.setAttribute("aria-current", active ? "page" : "false");
     }
@@ -5116,6 +5132,7 @@ export function setup(ctx) {
   }
 
   async function refreshCatalog({ forceLibrary = false } = {}) {
+    if (ACCOUNT_VIEWS[state.viewMode]) showAccountPage(true);
     const loads = [
       loadAccountState({ force: true }),
       loadSavedCharacters({ force: forceLibrary }),
@@ -6414,7 +6431,7 @@ export function setup(ctx) {
       const requestedMode = String(
         viewModeButton.getAttribute("data-view-mode") || "",
       );
-      const nextMode = ["fresh", "catalog", "imports", "following", "collections"].includes(
+      const nextMode = ["fresh", "catalog", "library", "imports", "following", "collections"].includes(
         requestedMode,
       )
         ? requestedMode

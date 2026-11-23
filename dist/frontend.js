@@ -122,7 +122,7 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
       </div>`;
       return;
     }
-    const heading = folder?.name || (view === "following" ? "Followed creators" : "");
+    const heading = folder?.name || (view === "following" ? "Followed creators" : view === "library" ? "DataCat library" : "");
     const overview = view === "collections" && !folder;
     host.innerHTML = `<div class="dcv1-account-tools" data-overview="${overview}">
       ${heading ? `<strong>${escape(heading)}</strong>` : ""}
@@ -131,7 +131,7 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
       ${folder || view === "following" ? '<button class="dcv1-button" type="button" data-account-back>Back to Shelf</button>' : ""}
       ${view === "following" ? `<label>Source <select data-account-source aria-label="Creator source"><option value="janitor" ${source === "janitor" ? "selected" : ""}>Janitor</option><option value="saucepan" ${source === "saucepan" ? "selected" : ""}>Saucepan</option></select></label>` : ""}
       <input class="dcv1-search" data-account-search type="search" aria-label="Filter loaded items" placeholder="Filter loaded items" value="${escape(filter)}" ${overview && !filterOpen ? "hidden" : ""}>
-      <details class="dcv1-account-settings"><summary aria-label="Shelf connection settings">Account</summary><div>
+      <details class="dcv1-account-settings"><summary aria-label="DataCat website connection settings">Account</summary><div>
         <span>${escape(name ? `Website session · ${name}` : connected === null ? "Checking connection…" : "Website session saved")}</span>
         <button class="dcv1-button" type="button" data-website-change>Update session</button>
         <button class="dcv1-button" type="button" data-website-disconnect>Remove saved session</button>
@@ -165,8 +165,8 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
       return;
     }
     list.innerHTML = `<div class="dcv1-creator-list">${matches.map(({ row, index }) => view === "following" ? creatorRow(row, `data-account-row="${index}"`) : `<button class="dcv1-account-row" type="button" data-account-row="${index}"><span class="dcv1-creator-initial" aria-hidden="true">${escape(Array.from(row.name || "?")[0])}</span><span class="dcv1-account-row-copy"><strong>${escape(row.name)}</strong><small>${escape(row.creatorName)}</small></span><span class="dcv1-row-arrow" aria-hidden="true">›</span></button>`).join("")}</div>`;
-    if (!matches.length && !busy)
-      list.innerHTML += `<p>${rows.length ? "No loaded items match this filter." : folder ? "This collection is empty." : "No followed creators for this source."}</p>`;
+    if (!matches.length && !busy && !error)
+      list.innerHTML += `<p>${rows.length ? "No loaded items match this filter." : folder ? "This collection is empty." : view === "library" ? "Your DataCat library is empty." : "No followed creators for this source."}</p>`;
   }
   async function loadCovers(ticket) {
     await Promise.allSettled(rows.slice(0, 8).map(async (row) => {
@@ -210,7 +210,7 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
       }
       if (!connected)
         return;
-      const action = view === "following" ? "following" : folder ? "collection-items" : "collections";
+      const action = view === "library" ? "library" : view === "following" ? "following" : folder ? "collection-items" : "collections";
       let payload;
       if (action === "collections") {
         const results = await Promise.allSettled([
@@ -370,7 +370,7 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
         return;
       if (view === "following")
         onCreator(row.ref);
-      else if (folder)
+      else if (folder || view === "library")
         onCharacter(row);
       else {
         folder = row;
@@ -401,6 +401,15 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
   host.addEventListener("input", input);
   host.addEventListener("error", imageError, true);
   return {
+    hide() {
+      if (!parentView)
+        return;
+      parentView = "";
+      view = "";
+      ++serial;
+      busy = false;
+      connected = null;
+    },
     show(nextView, refresh = false) {
       if (nextView !== parentView) {
         parentView = nextView;
@@ -657,8 +666,8 @@ function loadBlockedTags(legacyEntries, storage) {
 }
 
 // src/frontend.js
-var VERSION = "0.7.4";
-var DISPLAY_VERSION = "0.7.4";
+var VERSION = "0.7.5";
+var DISPLAY_VERSION = "0.7.5";
 var PAGE_SIZE = 24;
 var CHAT_LOADING_MIN_MS = 750;
 var MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -670,6 +679,7 @@ var CATALOG_SORT_OPTIONS = Object.freeze([
 ]);
 var PROD_ORIGIN = "https://datacat.run";
 var ACCOUNT_VIEWS = Object.freeze({
+  library: { title: "Library" },
   following: { title: "Following" },
   collections: { title: "Collections" }
 });
@@ -1409,6 +1419,13 @@ function setup(ctx) {
       color: var(--dc-yellow);
       border-bottom-color: var(--dc-yellow);
     }
+    .dcv1-library-tabs {
+      display: flex;
+      flex: 0 0 auto;
+      gap: 6px;
+      padding: 0 12px 6px;
+    }
+    .dcv1-library-tabs[hidden] { display: none; }
     .dcv1-import-options {
       flex: 0 0 auto;
       padding: 5px 12px;
@@ -3518,9 +3535,13 @@ function setup(ctx) {
     <nav class="dcv1-view-tabs" aria-label="Datacat browser view">
       <button class="dcv1-view-tab" type="button" data-view-mode="fresh" data-active="true">Discover</button>
       <button class="dcv1-view-tab" type="button" data-view-mode="catalog" data-active="false">Browse</button>
-      <button class="dcv1-view-tab" type="button" data-view-mode="imports" data-active="false">Library</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="library" data-library-main data-active="false">Library</button>
       <button class="dcv1-view-tab" type="button" data-view-mode="collections" data-active="false">Shelf</button>
     </nav>
+    <div class="dcv1-library-tabs" data-library-tabs hidden role="group" aria-label="Library source">
+      <button class="dcv1-view-tab" type="button" data-view-mode="library">DataCat library</button>
+      <button class="dcv1-view-tab" type="button" data-view-mode="imports">In Lumiverse</button>
+    </div>
     <div class="dcv1-import-options">
       <label title="Include the character's tags when importing into Lumiverse">
         <input type="checkbox" data-import-tags ${loadImportTagsPreference() ? "checked" : ""}>
@@ -3592,6 +3613,7 @@ function setup(ctx) {
   modalHost.setAttribute("aria-hidden", "true");
   document.body.append(modalHost);
   const grid = root.querySelector("[data-grid]");
+  const libraryTabs = root.querySelector("[data-library-tabs]");
   const importTagsToggle = root.querySelector("[data-import-tags]");
   const handleImportTagsChange = () => {
     try {
@@ -3642,7 +3664,7 @@ function setup(ctx) {
     }
   }
   const persistedBrowserState = readPersistedBrowserState();
-  const persistedViewMode = ["fresh", "catalog", "following", "collections"].includes(persistedBrowserState?.viewMode) ? persistedBrowserState.viewMode === "following" ? "collections" : persistedBrowserState.viewMode : "fresh";
+  const persistedViewMode = ["fresh", "catalog", "library", "imports", "following", "collections"].includes(persistedBrowserState?.viewMode) ? persistedBrowserState.viewMode === "following" ? "collections" : persistedBrowserState.viewMode : "fresh";
   const persistedCreatorRef = String(persistedBrowserState?.selectedCreatorRef || "").trim();
   const state = {
     initializing: true,
@@ -4973,8 +4995,10 @@ function setup(ctx) {
     catalogScroll.hidden = Boolean(view);
     accountFooter.hidden = false;
     tagsToggle.hidden = Boolean(view);
-    if (!view)
+    if (!view) {
+      accountViews.hide();
       return;
+    }
     accountViews.show(state.viewMode, refresh);
   }
   function render() {
@@ -4985,10 +5009,11 @@ function setup(ctx) {
     showAccountPage();
     const isFresh = state.viewMode === "fresh";
     const isImports = state.viewMode === "imports";
+    libraryTabs.hidden = state.viewMode !== "library" && !isImports;
     syncCatalogSortControl();
     searchClear.hidden = !state.query;
     for (const button of viewModeButtons) {
-      const active = button.dataset.viewMode === state.viewMode;
+      const active = button.hasAttribute("data-library-main") ? state.viewMode === "library" || isImports : button.dataset.viewMode === state.viewMode;
       button.dataset.active = String(active);
       button.setAttribute("aria-current", active ? "page" : "false");
     }
@@ -5171,6 +5196,8 @@ function setup(ctx) {
     }
   }
   async function refreshCatalog({ forceLibrary = false } = {}) {
+    if (ACCOUNT_VIEWS[state.viewMode])
+      showAccountPage(true);
     const loads = [
       loadAccountState({ force: true }),
       loadSavedCharacters({ force: forceLibrary })
@@ -6208,7 +6235,7 @@ function setup(ctx) {
     const viewModeButton = target.closest("[data-view-mode]");
     if (viewModeButton) {
       const requestedMode = String(viewModeButton.getAttribute("data-view-mode") || "");
-      const nextMode = ["fresh", "catalog", "imports", "following", "collections"].includes(requestedMode) ? requestedMode : "fresh";
+      const nextMode = ["fresh", "catalog", "library", "imports", "following", "collections"].includes(requestedMode) ? requestedMode : "fresh";
       if (nextMode === state.viewMode) {
         if (ACCOUNT_VIEWS[nextMode])
           showAccountPage(true);
