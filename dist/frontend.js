@@ -666,8 +666,8 @@ function loadBlockedTags(legacyEntries, storage) {
 }
 
 // src/frontend.js
-var VERSION = "0.7.5";
-var DISPLAY_VERSION = "0.7.5";
+var VERSION = "0.7.6";
+var DISPLAY_VERSION = "0.7.6";
 var PAGE_SIZE = 24;
 var CHAT_LOADING_MIN_MS = 750;
 var MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -830,9 +830,9 @@ function loadTagViewMode() {
 }
 function loadImportTagsPreference() {
   try {
-    return localStorage.getItem(storageKey("import_tags")) !== "false";
+    return localStorage.getItem(storageKey("import_tags")) === "true";
   } catch (_) {
-    return true;
+    return false;
   }
 }
 function saveTagViewMode(mode) {

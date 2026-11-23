@@ -4,8 +4,8 @@ import { mountAccountViews } from "./account-views.js";
 import { STORE_THEME } from "./store-theme.js";
 import { loadBlockedTags, saveBlockedTags } from "./tag-preferences.js";
 
-const VERSION = "0.7.5";
-const DISPLAY_VERSION = "0.7.5";
+const VERSION = "0.7.6";
+const DISPLAY_VERSION = "0.7.6";
 const PAGE_SIZE = 24;
 const CHAT_LOADING_MIN_MS = 750;
 const MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -194,9 +194,9 @@ function loadTagViewMode() {
 
 function loadImportTagsPreference() {
   try {
-    return localStorage.getItem(storageKey("import_tags")) !== "false";
+    return localStorage.getItem(storageKey("import_tags")) === "true";
   } catch (_) {
-    return true;
+    return false;
   }
 }
 

@@ -6,6 +6,12 @@ you want, import it, and start chatting without leaving your app.
 
 ## For Lumiverse users
 
+### Tags off by default (v0.7.6)
+
+**Import tags** starts unchecked when no preference is saved, including when
+device storage is unavailable. You can enable it when needed; an explicitly
+saved choice is still remembered.
+
 ### DataCat Library (v0.7.5)
 
 **Library → DataCat library** now loads your website library, including characters
@@ -25,7 +31,7 @@ saved list immediately. This does not sync the list between devices.
 
 Uncheck **Import tags** below the browser tabs before importing a character to
 leave its Lumiverse tags empty. The choice is remembered on this device and
-applies to all character import buttons. It starts enabled for existing behavior.
+applies to all character import buttons. As of v0.7.6, it starts unchecked.
 Catalog tag filters and already imported characters are unaffected.
 
 ### Angel.OS Light palette (v0.7.1)
