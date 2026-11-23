@@ -628,9 +628,37 @@ var STORE_THEME = `
   }
 `;
 
+// src/tag-preferences.js
+var BLOCKED_TAGS_KEY = "datacat_client_v1:blocked_tags";
+function normalizeBlockedTags(entries) {
+  return new Map(Array.isArray(entries) ? entries.filter((entry) => Array.isArray(entry) && Number.isSafeInteger(entry[0]) && entry[0] > 0 && typeof entry[1] === "string").map(([id, name]) => [id, name]) : []);
+}
+function saveBlockedTags(tags, storage) {
+  try {
+    (storage ?? globalThis.localStorage).setItem(BLOCKED_TAGS_KEY, JSON.stringify({
+      schema: 1,
+      tags: [...normalizeBlockedTags([...tags])]
+    }));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+function loadBlockedTags(legacyEntries, storage) {
+  try {
+    const saved = JSON.parse((storage ?? globalThis.localStorage).getItem(BLOCKED_TAGS_KEY));
+    if (saved?.schema === 1 && Array.isArray(saved.tags)) {
+      return normalizeBlockedTags(saved.tags);
+    }
+  } catch (_) {}
+  const migrated = normalizeBlockedTags(legacyEntries);
+  saveBlockedTags(migrated, storage);
+  return migrated;
+}
+
 // src/frontend.js
-var VERSION = "0.7.3";
-var DISPLAY_VERSION = "0.7.3";
+var VERSION = "0.7.4";
+var DISPLAY_VERSION = "0.7.4";
 var PAGE_SIZE = 24;
 var CHAT_LOADING_MIN_MS = 750;
 var MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -3668,7 +3696,7 @@ function setup(ctx) {
     tags: [],
     tagGroups: [],
     selectedTagIds: new Set(Array.isArray(persistedBrowserState?.selectedTagIds) ? persistedBrowserState.selectedTagIds.map(Number).filter((id) => Number.isFinite(id) && id > 0) : []),
-    blockedTags: new Map(Array.isArray(persistedBrowserState?.blockedTags) ? persistedBrowserState.blockedTags.filter((tag) => Array.isArray(tag) && Number.isSafeInteger(tag[0]) && tag[0] > 0 && typeof tag[1] === "string") : []),
+    blockedTags: loadBlockedTags(persistedBrowserState?.blockedTags),
     tagMode: "include",
     tagPanelOpen: persistedBrowserState?.tagPanelOpen === true,
     tagQuery: String(persistedBrowserState?.tagQuery || "").slice(0, 80),
@@ -5209,6 +5237,7 @@ function setup(ctx) {
     const blockedChanged = blocked.size !== state.blockedTags.size || [...blocked.keys()].some((id) => !state.blockedTags.has(id));
     state.selectedTagIds = included;
     state.blockedTags = blocked;
+    saveBlockedTags(blocked);
     persistBrowserStateNow();
     state.selectedSerial += 1;
     state.selected = null;

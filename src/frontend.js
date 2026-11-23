@@ -2,9 +2,10 @@ import { uuidv7 } from "./uuidv7.js";
 import { importCreatorName, prepareImportCard } from "./import-metadata.js";
 import { mountAccountViews } from "./account-views.js";
 import { STORE_THEME } from "./store-theme.js";
+import { loadBlockedTags, saveBlockedTags } from "./tag-preferences.js";
 
-const VERSION = "0.7.3";
-const DISPLAY_VERSION = "0.7.3";
+const VERSION = "0.7.4";
+const DISPLAY_VERSION = "0.7.4";
 const PAGE_SIZE = 24;
 const CHAT_LOADING_MIN_MS = 750;
 const MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -3169,14 +3170,7 @@ export function setup(ctx) {
             .filter((id) => Number.isFinite(id) && id > 0)
         : [],
     ),
-    blockedTags: new Map(
-      Array.isArray(persistedBrowserState?.blockedTags)
-        ? persistedBrowserState.blockedTags.filter(
-            (tag) => Array.isArray(tag) && Number.isSafeInteger(tag[0]) &&
-              tag[0] > 0 && typeof tag[1] === "string",
-          )
-        : [],
-    ),
+    blockedTags: loadBlockedTags(persistedBrowserState?.blockedTags),
     tagMode: "include",
     tagPanelOpen: persistedBrowserState?.tagPanelOpen === true,
     tagQuery: String(persistedBrowserState?.tagQuery || "").slice(0, 80),
@@ -5199,6 +5193,7 @@ export function setup(ctx) {
       [...blocked.keys()].some((id) => !state.blockedTags.has(id));
     state.selectedTagIds = included;
     state.blockedTags = blocked;
+    saveBlockedTags(blocked);
     persistBrowserStateNow();
     state.selectedSerial += 1;
     state.selected = null;

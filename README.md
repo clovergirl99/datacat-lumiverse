@@ -6,6 +6,13 @@ you want, import it, and start chatting without leaving your app.
 
 ## For Lumiverse users
 
+### Remember blocked tags (v0.7.4)
+
+Blocked catalog tags are saved on this device and restored after closing and
+reopening Lumiverse. Existing selections are migrated from the current browser
+session when available. Unblocking a tag or choosing **Clear tags** updates the
+saved list immediately. This does not sync the list between devices.
+
 ### Optional tag imports (v0.7.3)
 
 Uncheck **Import tags** below the browser tabs before importing a character to
