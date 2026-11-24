@@ -97,6 +97,7 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
   let hasMore = false, connected = null, busy = false, error = "", name = "", serial = 0, disposed = false;
   let filter = "", saved = false, parentView = "", filterOpen = false;
   let followedRows = [], followingPartial = false;
+  let removal = null, removing = false, removalError = "", notice = "";
   const covers = new Map;
   function creatorRow(row, attribute) {
     return `<button class="dcv1-account-row" type="button" ${attribute} ${!row.ref ? "disabled" : ""}>
@@ -138,7 +139,7 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
       </div></details></div>
     </div>
     <div class="dcv1-account-results" data-account-results></div>
-    <p class="dcv1-account-message" role="status">${escape(error || (busy ? "Loading…" : ""))}</p>
+    <p class="dcv1-account-message" role="status">${escape(error || (removing ? "Removing from collection…" : busy ? "Loading…" : notice))}</p>
     ${error ? '<button class="dcv1-button" data-account-retry type="button">Try again</button>' : ""}
     ${hasMore ? `<button class="dcv1-button" data-account-more type="button" ${busy ? "disabled" : ""}>Load more</button>` : ""}`;
     renderRows();
@@ -164,7 +165,16 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
         ${!followed.length && !busy ? "<p>No followed creators to show.</p>" : ""}</section>`;
       return;
     }
-    list.innerHTML = `<div class="dcv1-creator-list">${matches.map(({ row, index }) => view === "following" ? creatorRow(row, `data-account-row="${index}"`) : `<button class="dcv1-account-row" type="button" data-account-row="${index}"><span class="dcv1-creator-initial" aria-hidden="true">${escape(Array.from(row.name || "?")[0])}</span><span class="dcv1-account-row-copy"><strong>${escape(row.name)}</strong><small>${escape(row.creatorName)}</small></span><span class="dcv1-row-arrow" aria-hidden="true">›</span></button>`).join("")}</div>`;
+    list.innerHTML = `<div class="dcv1-creator-list">${matches.map(({ row, index }) => {
+      if (view === "following")
+        return creatorRow(row, `data-account-row="${index}"`);
+      const open = `<button class="dcv1-account-row" type="button" data-account-row="${index}"><span class="dcv1-creator-initial" aria-hidden="true">${escape(Array.from(row.name || "?")[0])}</span><span class="dcv1-account-row-copy"><strong>${escape(row.name)}</strong><small>${escape(row.creatorName)}</small></span><span class="dcv1-row-arrow" aria-hidden="true">›</span></button>`;
+      if (!folder)
+        return open;
+      const confirming = removal?.characterId === row.id && removal.folderId === folder.id;
+      return `<div class="dcv1-collection-item"><div class="dcv1-collection-item-actions">${open}<button class="dcv1-button dcv1-collection-remove" type="button" data-account-remove="${index}" aria-label="Remove ${escape(row.name)} from this collection" ${busy || removing ? "disabled" : ""}>Remove</button></div>
+        ${confirming ? `<div class="dcv1-collection-remove-confirm" role="group" aria-label="Confirm removal from collection"><strong>Remove “${escape(row.name)}” from “${escape(folder.name)}”?</strong><p>The character stays in your DataCat library, other collections, and Lumiverse.</p>${removalError ? `<p role="alert">${escape(removalError)}</p>` : ""}<div><button class="dcv1-button" type="button" data-account-remove-confirm ${removing ? "disabled" : ""}>${removing ? "Removing…" : "Remove from collection"}</button><button class="dcv1-button" type="button" data-account-remove-cancel ${removing ? "disabled" : ""}>Cancel</button></div></div>` : ""}</div>`;
+    }).join("")}</div>`;
     if (!matches.length && !busy && !error)
       list.innerHTML += `<p>${rows.length ? "No loaded items match this filter." : folder ? "This collection is empty." : view === "library" ? "Your DataCat library is empty." : "No followed creators for this source."}</p>`;
   }
@@ -198,6 +208,9 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
       rows = [];
       nextOffset = 0;
       hasMore = false;
+      removal = null;
+      removalError = "";
+      notice = "";
     }
     render();
     try {
@@ -265,6 +278,65 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
     if (!target || !host.contains(target))
       return;
     event.stopPropagation();
+    if (target.hasAttribute("data-account-remove-cancel")) {
+      if (!removing) {
+        removal = null;
+        removalError = "";
+        renderRows();
+      }
+      return;
+    }
+    if (target.hasAttribute("data-account-remove")) {
+      if (busy || removing || !folder || view !== "collections")
+        return;
+      const row = rows[Number(target.dataset.accountRemove)];
+      if (!row)
+        return;
+      removal = { folderId: folder.id, characterId: row.id };
+      removalError = "";
+      notice = "";
+      renderRows();
+      host.querySelector("[data-account-remove-cancel]")?.focus();
+      return;
+    }
+    if (target.hasAttribute("data-account-remove-confirm")) {
+      if (busy || removing || !removal || folder?.id !== removal.folderId || !rows.some((row) => row.id === removal.characterId))
+        return;
+      const selected = { ...removal }, ticket = serial;
+      removing = true;
+      removalError = "";
+      render();
+      let refreshCurrent = false;
+      try {
+        const result = await request({ action: "remove-collection-item", ...selected });
+        if (result?.removed !== true || result.folderId !== selected.folderId || result.characterId !== selected.characterId)
+          throw Error("DataCat did not confirm the removal. Try again.");
+        covers.delete(selected.folderId);
+        if (disposed)
+          return;
+        if (ticket === serial && folder?.id === selected.folderId) {
+          rows = rows.filter((row) => row.id !== selected.characterId);
+          nextOffset = Math.max(0, nextOffset - 1);
+          folder = { ...folder, count: Math.max(0, (folder.count || 0) - 1) };
+          removal = null;
+          notice = "Removed from this collection.";
+        } else if (view === "collections" && folder?.id === selected.folderId) {
+          refreshCurrent = true;
+        }
+      } catch (e) {
+        if (!disposed && ticket === serial)
+          removalError = e.message || "Could not remove this character. Try again.";
+      } finally {
+        removing = false;
+        if (!disposed) {
+          if (refreshCurrent)
+            await load();
+          else
+            render();
+        }
+      }
+      return;
+    }
     if (target.hasAttribute("data-account-filter-toggle")) {
       filterOpen = !filterOpen;
       render();
@@ -409,6 +481,9 @@ function mountAccountViews({ host, request, onCreator, onCharacter }) {
       ++serial;
       busy = false;
       connected = null;
+      removal = null;
+      removalError = "";
+      notice = "";
     },
     show(nextView, refresh = false) {
       if (nextView !== parentView) {
@@ -663,8 +738,8 @@ function loadBlockedTags(legacyEntries, storage) {
 }
 
 // src/frontend.js
-var VERSION = "0.7.7";
-var DISPLAY_VERSION = "0.7.7";
+var VERSION = "0.7.8";
+var DISPLAY_VERSION = "0.7.8";
 var PAGE_SIZE = 24;
 var CHAT_LOADING_MIN_MS = 750;
 var MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -1895,6 +1970,12 @@ function setup(ctx) {
     .dcv1-account-tools strong, .dcv1-account-tools > span { flex-basis: 100%; }
     .dcv1-account-tools > span, .dcv1-account-message { color: var(--dc-muted); font-size: 11px; }
     .dcv1-account-results { padding: 0 12px; }
+    .dcv1-collection-item-actions { display: flex; align-items: center; gap: 8px; }
+    .dcv1-collection-item-actions > .dcv1-account-row { flex: 1; min-width: 0; }
+    .dcv1-collection-remove { flex: 0 0 auto; min-height: 32px; }
+    .dcv1-collection-remove-confirm { padding: 10px; margin: 0 0 8px; border: 1px solid var(--dc-border); border-radius: 8px; color: var(--dc-text); background: var(--dc-panel); font-size: 11px; overflow-wrap: anywhere; }
+    .dcv1-collection-remove-confirm p { color: var(--dc-muted); margin: 6px 0; }
+    .dcv1-collection-remove-confirm > div { display: flex; flex-wrap: wrap; gap: 6px; }
     .dcv1-account-row { width: 100%; display: flex; flex-direction: column; gap: 5px; text-align: left; padding: 12px 0; color: var(--dc-text); background: transparent; border: 0; border-bottom: 1px solid var(--dc-border); cursor: pointer; font: inherit; }
     .dcv1-account-row span { color: var(--dc-muted); font-size: 12px; }
     .dcv1-account-row:focus-visible { outline: 2px solid var(--dc-yellow); }

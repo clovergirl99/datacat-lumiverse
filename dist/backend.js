@@ -96,7 +96,7 @@ function createWebsiteAccount(api) {
       throw fail("WEBSITE_SESSION_REJECTED", "DataCat did not accept this website session. Check that it is still active and belongs to a signed-in account.");
     }
     if (Number(response.status) < 200 || Number(response.status) >= 300 || body.success !== true) {
-      throw fail("WEBSITE_REQUEST_FAILED", Number(response.status) === 429 ? "DataCat is rate limiting requests. Try again shortly." : "DataCat could not load this account data. Try again later.");
+      throw fail("WEBSITE_REQUEST_FAILED", Number(response.status) === 429 ? "DataCat is rate limiting requests. Try again shortly." : method === "DELETE" ? "DataCat could not remove this character from the collection. Try again." : "DataCat could not load this account data. Try again later.");
     }
     return body;
   }
@@ -149,6 +149,15 @@ function createWebsiteAccount(api) {
         visibility: row.visibility === "published" ? "Published" : "Private"
       })) };
     }
+    if (action === "remove-collection-item") {
+      const folder = Number(input.folderId);
+      const character = input.characterId;
+      if (!Number.isSafeInteger(folder) || folder <= 0 || typeof character !== "string" || !UUID.test(character)) {
+        throw fail("INVALID_REQUEST", "Invalid collection or character.");
+      }
+      await read(`/api/user-folders/${folder}/items/${encodeURIComponent(character)}`, userId, undefined, "DELETE");
+      return { removed: true, folderId: folder, characterId: character };
+    }
     if (action === "collection-items" || action === "library") {
       const library = action === "library";
       const folder = Number(input.folderId);
@@ -180,7 +189,7 @@ var DATACAT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 var DEFAULT_DATACAT_ORIGIN = "https://datacat.run";
 var DATACAT_API_PREFIX = "/api/client/v1";
 var DATACAT_CLIENT_ID = "datacat_lumiverse";
-var DATACAT_CLIENT_VERSION = "0.7.7";
+var DATACAT_CLIENT_VERSION = "0.7.8";
 var INSTALLATION_KEY = "datacat.installation_id";
 var ACCESS_TOKEN_KEY = "datacat.access_token";
 var VERIFICATION_LEASE_KEY = "datacat.verification_lease";

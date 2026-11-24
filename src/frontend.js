@@ -4,8 +4,8 @@ import { mountAccountViews } from "./account-views.js";
 import { STORE_THEME } from "./store-theme.js";
 import { loadBlockedTags, saveBlockedTags } from "./tag-preferences.js";
 
-const VERSION = "0.7.7";
-const DISPLAY_VERSION = "0.7.7";
+const VERSION = "0.7.8";
+const DISPLAY_VERSION = "0.7.8";
 const PAGE_SIZE = 24;
 const CHAT_LOADING_MIN_MS = 750;
 const MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -1340,6 +1340,12 @@ export function setup(ctx) {
     .dcv1-account-tools strong, .dcv1-account-tools > span { flex-basis: 100%; }
     .dcv1-account-tools > span, .dcv1-account-message { color: var(--dc-muted); font-size: 11px; }
     .dcv1-account-results { padding: 0 12px; }
+    .dcv1-collection-item-actions { display: flex; align-items: center; gap: 8px; }
+    .dcv1-collection-item-actions > .dcv1-account-row { flex: 1; min-width: 0; }
+    .dcv1-collection-remove { flex: 0 0 auto; min-height: 32px; }
+    .dcv1-collection-remove-confirm { padding: 10px; margin: 0 0 8px; border: 1px solid var(--dc-border); border-radius: 8px; color: var(--dc-text); background: var(--dc-panel); font-size: 11px; overflow-wrap: anywhere; }
+    .dcv1-collection-remove-confirm p { color: var(--dc-muted); margin: 6px 0; }
+    .dcv1-collection-remove-confirm > div { display: flex; flex-wrap: wrap; gap: 6px; }
     .dcv1-account-row { width: 100%; display: flex; flex-direction: column; gap: 5px; text-align: left; padding: 12px 0; color: var(--dc-text); background: transparent; border: 0; border-bottom: 1px solid var(--dc-border); cursor: pointer; font: inherit; }
     .dcv1-account-row span { color: var(--dc-muted); font-size: 12px; }
     .dcv1-account-row:focus-visible { outline: 2px solid var(--dc-yellow); }

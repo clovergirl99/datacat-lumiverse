@@ -92,6 +92,38 @@ test("Library reads the whole website library, including link-added cards outsid
   assert.equal(result.hasMore, true);
 });
 
+test("remove a collection membership using the saved user session and exact DELETE route", async () => {
+  const f = fixture({ success: true });
+  f.secrets.set(`alice:${KEY}`, token);
+  const result = await f.run({ action: "remove-collection-item", folderId: 7, characterId: creatorId }, "alice");
+  assert.equal(f.calls[0].url, `https://datacat.run/api/user-folders/7/items/${creatorId}`);
+  assert.equal(f.calls[0].options.method, "DELETE");
+  assert.equal(f.calls[0].options.headers["X-Session-Token"], token);
+  assert.equal(f.calls[0].options.body, undefined);
+  assert.deepEqual(result, { removed: true, folderId: 7, characterId: creatorId });
+  assert.equal(f.calls.length, 1, "no library or character deletion is requested");
+});
+
+test("collection removal rejects invalid IDs and another user's missing session", async () => {
+  const f = fixture({ success: true });
+  f.secrets.set(`alice:${KEY}`, token);
+  for (const input of [
+    { folderId: -1, characterId: creatorId },
+    { folderId: "7/items", characterId: creatorId },
+    { folderId: 7, characterId: "../other" },
+    { folderId: 7, characterId: `${creatorId}?other=1` },
+  ]) await assert.rejects(f.run({ action: "remove-collection-item", ...input }, "alice"), { code: "INVALID_REQUEST" });
+  await assert.rejects(f.run({ action: "remove-collection-item", folderId: 7, characterId: creatorId }, "bob"), { code: "WEBSITE_SESSION_REQUIRED" });
+  assert.equal(f.calls.length, 0);
+});
+
+test("a failed collection removal is not reported as success and keeps saved credentials", async () => {
+  const f = fixture({ success: false, message: token }, 500);
+  f.secrets.set(`alice:${KEY}`, token);
+  await assert.rejects(f.run({ action: "remove-collection-item", folderId: 7, characterId: creatorId }, "alice"), e => e.code === "WEBSITE_REQUEST_FAILED" && !e.message.includes(token));
+  assert.equal(f.secrets.get(`alice:${KEY}`), token);
+});
+
 test("Library preserves pagination when invalid rows are filtered", async () => {
   const f = fixture({ success: true, characters: [{ id: "invalid" }, { id: creatorId, name: "Valid" }], paging: { hasMore: false } });
   f.secrets.set(`alice:${KEY}`, token);

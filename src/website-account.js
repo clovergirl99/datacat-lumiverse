@@ -44,7 +44,7 @@ export function createWebsiteAccount(api) {
       throw fail("WEBSITE_SESSION_REJECTED", "DataCat did not accept this website session. Check that it is still active and belongs to a signed-in account.");
     }
     if (Number(response.status) < 200 || Number(response.status) >= 300 || body.success !== true) {
-      throw fail("WEBSITE_REQUEST_FAILED", Number(response.status) === 429 ? "DataCat is rate limiting requests. Try again shortly." : "DataCat could not load this account data. Try again later.");
+      throw fail("WEBSITE_REQUEST_FAILED", Number(response.status) === 429 ? "DataCat is rate limiting requests. Try again shortly." : method === "DELETE" ? "DataCat could not remove this character from the collection. Try again." : "DataCat could not load this account data. Try again later.");
     }
     return body;
   }
@@ -91,6 +91,15 @@ export function createWebsiteAccount(api) {
         description: text(row.description, 1500), count: Number(row.itemCount ?? row.membershipCount) || 0,
         visibility: row.visibility === "published" ? "Published" : "Private",
       })) };
+    }
+    if (action === "remove-collection-item") {
+      const folder = Number(input.folderId);
+      const character = input.characterId;
+      if (!Number.isSafeInteger(folder) || folder <= 0 || typeof character !== "string" || !UUID.test(character)) {
+        throw fail("INVALID_REQUEST", "Invalid collection or character.");
+      }
+      await read(`/api/user-folders/${folder}/items/${encodeURIComponent(character)}`, userId, undefined, "DELETE");
+      return { removed: true, folderId: folder, characterId: character };
     }
     if (action === "collection-items" || action === "library") {
       const library = action === "library";

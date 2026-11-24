@@ -1,7 +1,7 @@
 {
   "name": "datacat-lumiverse-client",
   "private": true,
-  "version": "0.7.7",
+  "version": "0.7.8",
   "type": "module",
   "scripts": {
     "test": "node --test tests/import-metadata.test.js tests/website-account.test.js tests/tag-preferences.test.js tests/account-views.test.js",

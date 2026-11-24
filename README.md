@@ -6,6 +6,14 @@ you want, import it, and start chatting without leaving your app.
 
 ## For Lumiverse users
 
+### Remove characters from collections (v0.7.8)
+
+Open **Shelf**, open a collection, and choose **Remove** beside a character.
+Confirm **Remove from collection** to update that collection on DataCat. The
+character remains in your DataCat library, other collections, and Lumiverse.
+Failed requests keep the character visible and allow retry. Collection covers
+refresh after removal, and paging adjusts so the next page does not skip a card.
+
 ### Regular extension tab (v0.7.7)
 
 DataCat now uses Lumiverse's regular extension tab alongside your other
