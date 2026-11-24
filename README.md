@@ -6,6 +6,12 @@ you want, import it, and start chatting without leaving your app.
 
 ## For Lumiverse users
 
+### Regular extension tab (v0.7.7)
+
+DataCat now uses Lumiverse's regular extension tab alongside your other
+extensions, rather than a separate button beside Settings. The heart-card icon
+and all browser features are retained.
+
 ### Tags off by default (v0.7.6)
 
 **Import tags** starts unchecked when no preference is saved, including when

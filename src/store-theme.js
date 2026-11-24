@@ -126,9 +126,6 @@ export const STORE_THEME = `
   .dcv1-account-page-note { margin: 2px 0; padding: 14px; background: var(--dc-panel); border: 1px solid var(--dc-border); border-radius: 10px; color: var(--dc-muted); font-size: 11px; }
   .dcv1-account-page-note h3 { color: var(--dc-text); font-size: 13px; margin-top: 0; }
   .dcv1-account-message { margin: 4px 0 9px; }
-  button.dcv1-native-launch[data-spindle-ext-id="datacat_client_v1"],
-  button.dcv1-native-launch[data-active="true"] { --dc-icon-fill: var(--faye-text-soft,#7b4b61); color: var(--faye-text,#704055) !important; background: transparent !important; box-shadow: none !important; border-left: 0 !important; }
-  .dcv1-native-launch::before, .dcv1-native-launch::after { display: none !important; }
   .dcv1-root button:focus-visible, .dcv1-root [tabindex]:focus-visible,
   .dcv1-page-modal-host button:focus-visible { outline: 2px solid var(--dc-accent-text); outline-offset: 2px; }
   .dcv1-root select, .dcv1-page-modal-host select { background: var(--dc-panel); color: var(--dc-text); border: 1px solid var(--dc-border); border-radius: 6px; font: inherit; }
@@ -199,3 +196,4 @@ export const STORE_THEME = `
     .dcv1-account-pages { padding-left: 10px; padding-right: 10px; }
   }
 `;
+

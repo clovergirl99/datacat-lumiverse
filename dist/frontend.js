@@ -563,9 +563,6 @@ var STORE_THEME = `
   .dcv1-account-page-note { margin: 2px 0; padding: 14px; background: var(--dc-panel); border: 1px solid var(--dc-border); border-radius: 10px; color: var(--dc-muted); font-size: 11px; }
   .dcv1-account-page-note h3 { color: var(--dc-text); font-size: 13px; margin-top: 0; }
   .dcv1-account-message { margin: 4px 0 9px; }
-  button.dcv1-native-launch[data-spindle-ext-id="datacat_client_v1"],
-  button.dcv1-native-launch[data-active="true"] { --dc-icon-fill: var(--faye-text-soft,#7b4b61); color: var(--faye-text,#704055) !important; background: transparent !important; box-shadow: none !important; border-left: 0 !important; }
-  .dcv1-native-launch::before, .dcv1-native-launch::after { display: none !important; }
   .dcv1-root button:focus-visible, .dcv1-root [tabindex]:focus-visible,
   .dcv1-page-modal-host button:focus-visible { outline: 2px solid var(--dc-accent-text); outline-offset: 2px; }
   .dcv1-root select, .dcv1-page-modal-host select { background: var(--dc-panel); color: var(--dc-text); border: 1px solid var(--dc-border); border-radius: 6px; font: inherit; }
@@ -666,8 +663,8 @@ function loadBlockedTags(legacyEntries, storage) {
 }
 
 // src/frontend.js
-var VERSION = "0.7.6";
-var DISPLAY_VERSION = "0.7.6";
+var VERSION = "0.7.7";
+var DISPLAY_VERSION = "0.7.7";
 var PAGE_SIZE = 24;
 var CHAT_LOADING_MIN_MS = 750;
 var MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -2629,41 +2626,6 @@ function setup(ctx) {
       cursor: default;
       opacity: 1;
     }
-    .dcv1-native-launch {
-      width: 100%;
-      height: 48px;
-      flex: 0 0 48px;
-      display: inline-flex;
-      justify-content: center;
-      align-items: center;
-      padding: 13px;
-      color: #f6c84c;
-      border: 0;
-      border-radius: 8px;
-      background: transparent;
-      cursor: pointer;
-      transition:
-        background var(--lumiverse-transition-fast, 120ms),
-        color var(--lumiverse-transition-fast, 120ms),
-        border-color var(--lumiverse-transition-fast, 120ms);
-    }
-    .dcv1-native-launch:hover {
-      color: #ffe08a;
-      background: var(--lumiverse-primary-015, var(--lumiverse-fill-hover));
-    }
-    .dcv1-native-launch[data-active="true"] {
-      color: #f6c84c !important;
-      background: rgba(246, 200, 76, .14);
-      box-shadow: inset 3px 0 0 #f6c84c;
-    }
-    .dcv1-native-launch svg {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-    .dcv1-native-scroll-tab {
-      display: none !important;
-    }
     .dcv1-infinite-sentinel {
       min-height: 54px;
       display: flex;
@@ -3505,16 +3467,6 @@ function setup(ctx) {
         grid-column: auto;
         justify-content: initial;
         gap: 3px;
-      }
-      .dcv1-native-launch {
-        width: 42px;
-        height: 42px;
-        flex-basis: 42px;
-        padding: 11px;
-      }
-      .dcv1-native-launch[data-active="true"] {
-        color: #f6c84c !important;
-        box-shadow: inset 0 -3px 0 #f6c84c;
       }
     }
     ${STORE_THEME}
@@ -6734,58 +6686,27 @@ function setup(ctx) {
   const stopChatCommentAction = chatCommentAction.onClick(() => {
     openCommunityForActiveChat("comment");
   });
-  const charactersLaunchButton = ctx.dom.createElement("button", {
-    type: "button",
-    class: "dcv1-native-launch",
-    title: "Browse Datacat",
-    "aria-label": "Browse Datacat"
-  });
-  charactersLaunchButton.innerHTML = STORE_ICON;
-  const activateDatacat = () => tab.activate();
-  charactersLaunchButton.addEventListener("click", activateDatacat);
-  let charactersLaunchRaf = 0;
-  const hiddenScrollableTabButtons = new Set;
-  const placeCharactersLaunchButton = () => {
-    charactersLaunchRaf = 0;
-    const sidebar = document.querySelector('[data-spindle-mount="sidebar"]');
-    const fixedSlot = sidebar?.lastElementChild;
-    const settingsButton = fixedSlot?.querySelector?.("button");
-    if (fixedSlot instanceof HTMLElement && settingsButton) {
-      if (charactersLaunchButton.parentElement !== fixedSlot) {
-        fixedSlot.insertBefore(charactersLaunchButton, settingsButton);
-      }
-      for (const button of sidebar.querySelectorAll('button[title="Datacat"]')) {
-        if (button === charactersLaunchButton)
-          continue;
-        button.classList.add("dcv1-native-scroll-tab");
-        hiddenScrollableTabButtons.add(button);
-      }
-    }
-    const active = tab.root.isConnected;
-    charactersLaunchButton.dataset.active = String(active);
-    charactersLaunchButton.setAttribute("aria-pressed", String(active));
-    if (active) {
+  let hostFrameRaf = 0;
+  const syncHostFrame = () => {
+    hostFrameRaf = 0;
+    if (tab.root.isConnected) {
       attempts = 0;
       markHost();
     } else {
       clearDatacatHostFrame();
     }
   };
-  const scheduleCharactersLaunchButton = () => {
-    if (charactersLaunchRaf)
-      return;
-    charactersLaunchRaf = requestAnimationFrame(placeCharactersLaunchButton);
+  const scheduleHostFrameSync = () => {
+    if (!hostFrameRaf)
+      hostFrameRaf = requestAnimationFrame(syncHostFrame);
   };
   const characterToolbarRoot = document.querySelector("[data-app-root]") || document.body;
-  const characterToolbarObserver = new MutationObserver(scheduleCharactersLaunchButton);
-  characterToolbarObserver.observe(characterToolbarRoot, {
-    childList: true,
-    subtree: true
-  });
+  const characterToolbarObserver = new MutationObserver(scheduleHostFrameSync);
+  characterToolbarObserver.observe(characterToolbarRoot, { childList: true, subtree: true });
   const handlePageHide = () => persistBrowserStateNow();
   window.addEventListener("pagehide", handlePageHide);
-  window.addEventListener("hashchange", scheduleCharactersLaunchButton);
-  scheduleCharactersLaunchButton();
+  window.addEventListener("hashchange", scheduleHostFrameSync);
+  scheduleHostFrameSync();
   window.addEventListener("focus", syncAccountAfterFocus);
   document.addEventListener("pointerdown", closeMenuAfterOutsidePointer, true);
   render();
@@ -6839,20 +6760,14 @@ function setup(ctx) {
     creatorObserver.disconnect();
     characterToolbarObserver.disconnect();
     cancelAnimationFrame(raf);
-    cancelAnimationFrame(charactersLaunchRaf);
+    cancelAnimationFrame(hostFrameRaf);
     stopActivationWatch();
     stopChatKudosAction();
     stopChatCommentAction();
     chatKudosAction.destroy();
     chatCommentAction.destroy();
-    charactersLaunchButton.removeEventListener("click", activateDatacat);
-    charactersLaunchButton.remove();
-    for (const button of hiddenScrollableTabButtons) {
-      button.classList.remove("dcv1-native-scroll-tab");
-    }
-    hiddenScrollableTabButtons.clear();
     window.removeEventListener("pagehide", handlePageHide);
-    window.removeEventListener("hashchange", scheduleCharactersLaunchButton);
+    window.removeEventListener("hashchange", scheduleHostFrameSync);
     window.removeEventListener("focus", syncAccountAfterFocus);
     stopBackendMessages();
     datacatBackendRequest = null;
