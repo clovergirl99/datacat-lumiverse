@@ -1,11 +1,12 @@
 const escape = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-export function mountAccountViews({ host, request, onCreator, onCharacter }) {
+export function mountAccountViews({ host, request, onCreator, onCharacter, onImport, getImportState = () => ({}) }) {
   let view = "", source = "janitor", folder = null, rows = [], nextOffset = 0;
   let hasMore = false, connected = null, busy = false, error = "", name = "", serial = 0, disposed = false;
   let filter = "", saved = false, parentView = "", filterOpen = false;
   let followedRows = [], followingPartial = false;
   let removal = null, removing = false, removalError = "", notice = "";
+  let quickImportId = "", quickError = "";
   const covers = new Map();
 
   function creatorRow(row, attribute) {
@@ -50,7 +51,7 @@ export function mountAccountViews({ host, request, onCreator, onCharacter }) {
       </div></details></div>
     </div>
     <div class="dcv1-account-results" data-account-results></div>
-    <p class="dcv1-account-message" role="status">${escape(error || (removing ? "Removing from collection…" : busy ? "Loading…" : notice))}</p>
+    <p class="dcv1-account-message" role="status">${escape(error || quickError || (removing ? "Removing from collection…" : busy ? "Loading…" : notice))}</p>
     ${error ? '<button class="dcv1-button" data-account-retry type="button">Try again</button>' : ""}
     ${hasMore ? `<button class="dcv1-button" data-account-more type="button" ${busy ? "disabled" : ""}>Load more</button>` : ""}`;
     renderRows();
@@ -83,7 +84,10 @@ export function mountAccountViews({ host, request, onCreator, onCharacter }) {
       const open = `<button class="dcv1-account-row" type="button" data-account-row="${index}"><span class="dcv1-creator-initial" aria-hidden="true">${escape(Array.from(row.name || "?")[0])}</span><span class="dcv1-account-row-copy"><strong>${escape(row.name)}</strong><small>${escape(row.creatorName)}</small></span><span class="dcv1-row-arrow" aria-hidden="true">›</span></button>`;
       if (!folder) return open;
       const confirming = removal?.characterId === row.id && removal.folderId === folder.id;
-      return `<div class="dcv1-collection-item"><div class="dcv1-collection-item-actions">${open}<button class="dcv1-button dcv1-collection-remove" type="button" data-account-remove="${index}" aria-label="Remove ${escape(row.name)} from this collection" ${busy || removing ? "disabled" : ""}>Remove</button></div>
+      const importState = getImportState(row.id) || {};
+      const importing = quickImportId === row.id || importState.importing;
+      const quickImport = onImport ? `<button class="dcv1-button" data-primary type="button" data-account-quick-import="${index}" aria-label="${importState.added ? "Already imported" : "Quick import"} ${escape(row.name)}" ${busy || removing || quickImportId || importState.busy || importState.added ? "disabled" : ""}>${importState.added ? "✓ Added" : importing ? "Importing…" : "Quick import"}</button>` : "";
+      return `<div class="dcv1-collection-item"><div class="dcv1-collection-item-actions">${open}<div class="dcv1-collection-item-controls">${quickImport}<button class="dcv1-button dcv1-collection-remove" type="button" data-account-remove="${index}" aria-label="Remove ${escape(row.name)} from this collection" ${busy || removing || quickImportId ? "disabled" : ""}>Remove</button></div></div>
         ${confirming ? `<div class="dcv1-collection-remove-confirm" role="group" aria-label="Confirm removal from collection"><strong>Remove “${escape(row.name)}” from “${escape(folder.name)}”?</strong><p>The character stays in your DataCat library, other collections, and Lumiverse.</p>${removalError ? `<p role="alert">${escape(removalError)}</p>` : ""}<div><button class="dcv1-button" type="button" data-account-remove-confirm ${removing ? "disabled" : ""}>${removing ? "Removing…" : "Remove from collection"}</button><button class="dcv1-button" type="button" data-account-remove-cancel ${removing ? "disabled" : ""}>Cancel</button></div></div>` : ""}</div>`;
     }).join("")}</div>`;
     if (!matches.length && !busy && !error) list.innerHTML += `<p>${rows.length ? "No loaded items match this filter." : folder ? "This collection is empty." : view === "library" ? "Your DataCat library is empty." : "No followed creators for this source."}</p>`;
@@ -108,7 +112,7 @@ export function mountAccountViews({ host, request, onCreator, onCharacter }) {
   async function load(reset = true) {
     const ticket = ++serial;
     busy = true; error = "";
-    if (reset) { rows = []; nextOffset = 0; hasMore = false; removal = null; removalError = ""; notice = ""; }
+    if (reset) { rows = []; nextOffset = 0; hasMore = false; removal = null; removalError = ""; notice = ""; quickError = ""; }
     render();
     try {
       if (connected === null) {
@@ -160,12 +164,33 @@ export function mountAccountViews({ host, request, onCreator, onCharacter }) {
     const target = event.target.closest("button");
     if (!target || !host.contains(target)) return;
     event.stopPropagation();
+    if (target.hasAttribute("data-account-quick-import")) {
+      if (busy || removing || quickImportId || !folder || view !== "collections" || !onImport) return;
+      const row = rows[Number(target.dataset.accountQuickImport)];
+      if (!row) return;
+      const importState = getImportState(row.id) || {};
+      if (importState.busy || importState.added) return;
+      const ticket = serial;
+      quickImportId = row.id; quickError = ""; removal = null; removalError = "";
+      renderRows();
+      try {
+        // Call immediately in the click gesture so existing verification can
+        // open its window when DataCat requires it. Do not open the profile.
+        await onImport(row);
+      } catch (e) {
+        if (!disposed && ticket === serial) quickError = e.message || "Could not import this character. Try again.";
+      } finally {
+        quickImportId = "";
+        if (!disposed) render();
+      }
+      return;
+    }
     if (target.hasAttribute("data-account-remove-cancel")) {
       if (!removing) { removal = null; removalError = ""; renderRows(); }
       return;
     }
     if (target.hasAttribute("data-account-remove")) {
-      if (busy || removing || !folder || view !== "collections") return;
+      if (busy || removing || quickImportId || !folder || view !== "collections") return;
       const row = rows[Number(target.dataset.accountRemove)];
       if (!row) return;
       removal = { folderId: folder.id, characterId: row.id };
@@ -174,7 +199,7 @@ export function mountAccountViews({ host, request, onCreator, onCharacter }) {
       return;
     }
     if (target.hasAttribute("data-account-remove-confirm")) {
-      if (busy || removing || !removal || folder?.id !== removal.folderId || !rows.some(row => row.id === removal.characterId)) return;
+      if (busy || removing || quickImportId || !removal || folder?.id !== removal.folderId || !rows.some(row => row.id === removal.characterId)) return;
       const selected = { ...removal }, ticket = serial;
       removing = true; removalError = ""; render();
       let refreshCurrent = false;
@@ -273,9 +298,10 @@ export function mountAccountViews({ host, request, onCreator, onCharacter }) {
   host.addEventListener("input", input);
   host.addEventListener("error", imageError, true);
   return {
+    refreshImports() { if (!disposed) renderRows(); },
     hide() {
       if (!parentView) return;
-      parentView = ""; view = ""; ++serial; busy = false; connected = null; removal = null; removalError = ""; notice = "";
+      parentView = ""; view = ""; ++serial; busy = false; connected = null; removal = null; removalError = ""; notice = ""; quickError = "";
     },
     show(nextView, refresh = false) {
       if (nextView !== parentView) {

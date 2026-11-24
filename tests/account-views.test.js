@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mountAccountViews } from "../src/account-views.js";
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
-function fixture(request) {
+function fixture(request, options = {}) {
   // Only the host boundary is mocked; exercise the real view's loading,
   // pagination, click handlers, refresh and request cancellation.
   const listeners = new Map();
@@ -16,11 +16,11 @@ function fixture(request) {
     replaceChildren() { this.innerHTML = ""; results.innerHTML = ""; },
   };
   const opened = [];
-  const view = mountAccountViews({ host, request, onCreator: ref => opened.push(ref), onCharacter: row => opened.push(row) });
+  const view = mountAccountViews({ host, request, onCreator: ref => opened.push(ref), onCharacter: row => opened.push(row), ...options });
   return {
     view, host, results, opened,
     async click(attribute, value = "") {
-      const target = { dataset: { accountRow: value, accountRemove: value }, closest() { return this; }, hasAttribute: attr => attr === attribute };
+      const target = { dataset: { accountRow: value, accountRemove: value, accountQuickImport: value }, closest() { return this; }, hasAttribute: attr => attr === attribute };
       await listeners.get("click")({ target, stopPropagation() {} });
     },
   };
@@ -96,7 +96,7 @@ test("a failed website request shows an error, not a false empty-library result,
 
 const charA = "11111111-1111-4111-8111-111111111111";
 const charB = "22222222-2222-4222-8222-222222222222";
-async function collectionFixture(remove = async input => ({ removed: true, folderId: input.folderId, characterId: input.characterId })) {
+async function collectionFixture(remove = async input => ({ removed: true, folderId: input.folderId, characterId: input.characterId }), options = {}) {
   const calls = [];
   const f = fixture(async input => {
     calls.push(input);
@@ -108,7 +108,7 @@ async function collectionFixture(remove = async input => ({ removed: true, folde
     return input.offset === 23
       ? { rows: [{ id: "next", name: "Next page" }], nextOffset: 24, hasMore: false }
       : { rows: [{ id: charA, name: 'Alex <one>' }, { id: charB, name: 'Alex <two>' }], nextOffset: 24, hasMore: true };
-  });
+  }, options);
   f.view.show("collections"); await settle();
   await f.click("data-account-row", "0");
   return { ...f, calls };
@@ -177,5 +177,60 @@ test("Library has no collection-removal controls", async () => {
   const f = fixture(async input => input.action === "status" ? { connected: true } : { rows: [{ id: charA, name: "Library card" }] });
   f.view.show("library"); await settle();
   assert.doesNotMatch(f.results.innerHTML, /data-account-remove/);
+  f.view.destroy();
+});
+
+test("Quick import imports the chosen collection card without opening its profile or removing it", async () => {
+  const imported = [], added = new Set();
+  const f = await collectionFixture(undefined, {
+    onImport: row => { imported.push(row); added.add(row.id); },
+    getImportState: id => ({ added: added.has(id) }),
+  });
+  assert.match(f.results.innerHTML, /Quick import/);
+  await f.click("data-account-quick-import", "1");
+  assert.equal(imported[0].id, charB);
+  assert.equal(imported[0].name, "Alex <two>");
+  assert.equal(f.opened.length, 0);
+  assert.equal(f.calls.filter(call => call.action === "remove-collection-item").length, 0);
+  assert.match(f.results.innerHTML, /✓ Added/);
+  assert.match(f.results.innerHTML, /Alex &lt;two&gt;/);
+  await f.click("data-account-quick-import", "1");
+  assert.equal(imported.length, 1, "already imported cards must not be imported twice");
+  f.view.destroy();
+});
+
+test("Quick import invokes its callback in the click gesture and blocks duplicate clicks", async () => {
+  let calls = 0, resolve;
+  const f = await collectionFixture(undefined, { onImport: () => { calls++; return new Promise(yes => { resolve = yes; }); } });
+  const pending = f.click("data-account-quick-import", "0");
+  assert.equal(calls, 1, "verification can open synchronously in the click gesture");
+  assert.match(f.results.innerHTML, /Importing…/);
+  await f.click("data-account-quick-import", "1");
+  assert.equal(calls, 1);
+  resolve(); await pending;
+  f.view.destroy();
+});
+
+test("Quick import respects an existing import elsewhere and refreshes its Added status", async () => {
+  let busy = true, added = false, calls = 0;
+  const f = await collectionFixture(undefined, { onImport: () => { calls++; }, getImportState: () => ({ busy, added }) });
+  await f.click("data-account-quick-import", "0");
+  assert.equal(calls, 0);
+  busy = false; added = true; f.view.refreshImports();
+  assert.match(f.results.innerHTML, /✓ Added/);
+  await f.click("data-account-quick-import", "0");
+  assert.equal(calls, 0);
+  f.view.destroy();
+});
+
+test("failed Quick import keeps the collection intact and allows retry", async () => {
+  let calls = 0;
+  const f = await collectionFixture(undefined, { onImport: () => { if (++calls === 1) throw Error("Import failed"); } });
+  await f.click("data-account-quick-import", "0");
+  assert.match(f.host.innerHTML, /Import failed/);
+  assert.match(f.results.innerHTML, /Alex &lt;one&gt;/);
+  await f.click("data-account-quick-import", "0");
+  assert.equal(calls, 2);
+  assert.doesNotMatch(f.host.innerHTML, /Import failed/);
   f.view.destroy();
 });

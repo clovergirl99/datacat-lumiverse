@@ -4,8 +4,8 @@ import { mountAccountViews } from "./account-views.js";
 import { STORE_THEME } from "./store-theme.js";
 import { loadBlockedTags, saveBlockedTags } from "./tag-preferences.js";
 
-const VERSION = "0.7.8";
-const DISPLAY_VERSION = "0.7.8";
+const VERSION = "0.7.9";
+const DISPLAY_VERSION = "0.7.9";
 const PAGE_SIZE = 24;
 const CHAT_LOADING_MIN_MS = 750;
 const MAX_MIRRORED_AVATAR_BYTES = 50 * 1024 * 1024;
@@ -1342,6 +1342,7 @@ export function setup(ctx) {
     .dcv1-account-results { padding: 0 12px; }
     .dcv1-collection-item-actions { display: flex; align-items: center; gap: 8px; }
     .dcv1-collection-item-actions > .dcv1-account-row { flex: 1; min-width: 0; }
+    .dcv1-collection-item-controls { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 50%; }
     .dcv1-collection-remove { flex: 0 0 auto; min-height: 32px; }
     .dcv1-collection-remove-confirm { padding: 10px; margin: 0 0 8px; border: 1px solid var(--dc-border); border-radius: 8px; color: var(--dc-text); background: var(--dc-panel); font-size: 11px; overflow-wrap: anywhere; }
     .dcv1-collection-remove-confirm p { color: var(--dc-muted); margin: 6px 0; }
@@ -3401,16 +3402,28 @@ export function setup(ctx) {
     }
   });
 
+  const rememberAccountCharacter = (row) => {
+    const source = /^[a-z0-9_]+$/i.test(row.sourceKind || "") ? `?sourceKind=${encodeURIComponent(row.sourceKind)}` : "";
+    const character = { ...row, clientPaths: { profile: `/characters/${row.id}${source}` } };
+    state.accountCharacters = [...state.accountCharacters.filter(item => item.id !== row.id), character];
+  };
   const accountViews = mountAccountViews({
     host: accountPages,
     request: request => datacatBackendRequest("website", request),
     onCreator: ref => { void openCreator(ref); },
     onCharacter: row => {
-      const source = /^[a-z0-9_]+$/i.test(row.sourceKind || "") ? `?sourceKind=${encodeURIComponent(row.sourceKind)}` : "";
-      const character = { ...row, clientPaths: { profile: `/characters/${row.id}${source}` } };
-      state.accountCharacters = [...state.accountCharacters.filter(item => item.id !== row.id), character];
+      rememberAccountCharacter(row);
       void openProfile(row.id);
     },
+    onImport: row => {
+      rememberAccountCharacter(row);
+      return importCharacter(row.id);
+    },
+    getImportState: id => ({
+      added: Boolean(savedLumiverseId(id)),
+      busy: Boolean(state.importId) || state.initializing || state.savedLoading,
+      importing: state.importId === id,
+    }),
   });
 
   async function ensureSecureTransportPermission() {
@@ -4813,6 +4826,7 @@ export function setup(ctx) {
     tagsToggle.hidden = Boolean(view);
     if (!view) { accountViews.hide(); return; }
     accountViews.show(state.viewMode, refresh);
+    accountViews.refreshImports();
   }
 
   function render() {

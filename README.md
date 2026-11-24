@@ -6,6 +6,14 @@ you want, import it, and start chatting without leaving your app.
 
 ## For Lumiverse users
 
+### Quick import from collections (v0.7.9)
+
+Open **Shelf → collection** and choose **Quick import** beside a character to
+import it directly into Lumiverse without opening its profile. This uses the
+normal import flow and your current **Import tags** choice. Already imported
+characters show **Added**, and buttons disable while an import is running to
+prevent duplicate requests. Importing does not remove the collection membership.
+
 ### Remove characters from collections (v0.7.8)
 
 Open **Shelf**, open a collection, and choose **Remove** beside a character.
